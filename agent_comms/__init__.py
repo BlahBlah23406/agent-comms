@@ -11,6 +11,8 @@ from agent_comms.capsule.unpacker import CapsuleUnpacker
 from agent_comms.capsule.store import CapsuleStore
 from agent_comms.relay.client import AgentRelayClient
 from agent_comms.relay.server import RelayHub, create_app
+from agent_comms.mesh.blackboard import CognitiveBlackboard
+from agent_comms.mesh.node import DualBrainNode
 
 __all__ = [
     "ContextCapsule",
@@ -25,4 +27,6 @@ __all__ = [
     "AgentRelayClient",
     "RelayHub",
     "create_app",
+    "CognitiveBlackboard",
+    "DualBrainNode",
 ]
