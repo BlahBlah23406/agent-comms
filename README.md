@@ -6,6 +6,9 @@
 
 **Agent Comms** is a comprehensive, production-grade protocol and toolkit enabling AI coding agents to communicate, share work, and transfer mental models across different sessions and physical computers.
 
+> 💡 **Looking for the simplest way to use this?**  
+> Read the [**Natural Language User Guide (`USER_GUIDE.md`)**](USER_GUIDE.md) to see exact, copy-pasteable English prompts for **Claude Desktop**, **Antigravity**, and **Cursor**!
+
 It supports both:
 1. **Out-of-Session Handoff (Context Capsules):** Package an agent's epistemic discoveries, task roadmap, git diffs, and untracked files into a structured, portable capsule to resume seamlessly on another computer or future session without context window bloat.
 2. **In-Session Live Collaboration (AHRP Relay):** A real-time WebSocket event mesh enabling distributed agents on separate machines to discover peers, broadcast milestones via Pub/Sub, and execute cross-machine Remote Procedure Calls (RPC).
@@ -70,6 +73,7 @@ CROSS-MACHINE  │ - Peer Discovery & RPC        │ - Git Diffs & Untracked Fil
 ```
 agent-comms/
 ├── README.md                      # Project overview & architecture
+├── USER_GUIDE.md                  # Plain-English prompt cheat sheet (Claude/Antigravity)
 ├── ONBOARDING.md                  # 5-minute quickstart & developer onboarding
 ├── RESEARCH_AND_COMPARISON.md     # In-depth industry research and taxonomy
 ├── SPECIFICATION.md               # Formal protocol and schema specification
@@ -99,6 +103,7 @@ agent-comms/
 │       ├── README.md              # Index of real-world experiments
 │       ├── 01_ORCHESTRATOR_WORKER_EXPERIMENT.md
 │       ├── 02_PEER_TO_PEER_DUAL_BRAIN_EXPERIMENT.md
+│       ├── 03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md
 │       └── code/                  # Exact reproducible scripts
 └── tests/                         # Test and verification suite
     ├── test_capsule.py            # Unit tests for serialization & briefing
@@ -139,7 +144,7 @@ This protocol and architecture have been validated across physical, heterogeneou
 
 ## Quickstart
 
-For full step-by-step onboarding, see the [**Onboarding Guide (`ONBOARDING.md`)**](ONBOARDING.md).
+For full step-by-step onboarding, see the [**Onboarding Guide (`ONBOARDING.md`)**](ONBOARDING.md) or [**Natural Language User Guide (`USER_GUIDE.md`)**](USER_GUIDE.md).
 
 ### 1. Scaffold a Dual-Brain Template
 ```bash
@@ -176,6 +181,7 @@ agent-comms capsule unpack "AUTH-01"
 ---
 
 ## Further Reading
+- [**Natural Language User Guide** (`USER_GUIDE.md`)](USER_GUIDE.md) — Plain-English prompt cheat sheet for Claude Desktop, Antigravity, and Cursor.
 - [**Onboarding Guide** (`ONBOARDING.md`)](ONBOARDING.md) — 5-minute setup and recipes for dual-brain agents.
 - [**Research & Architectural Comparison** (`RESEARCH_AND_COMPARISON.md`)](RESEARCH_AND_COMPARISON.md) — Comparison against AutoGen, LangGraph, Temporal, and MCP.
 - [**Protocol Specification** (`SPECIFICATION.md`)](SPECIFICATION.md) — Formal AHRP protocol and frame schemas.
