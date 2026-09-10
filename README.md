@@ -144,23 +144,29 @@ This protocol and architecture have been validated across physical, heterogeneou
 
 ## Quickstart
 
-For full step-by-step onboarding, see the [**Onboarding Guide (`ONBOARDING.md`)**](ONBOARDING.md) or [**Natural Language User Guide (`USER_GUIDE.md`)**](USER_GUIDE.md).
+For plain-English prompt examples, see the [**Natural Language User Guide (`USER_GUIDE.md`)**](USER_GUIDE.md).
 
-### 1. Scaffold a Dual-Brain Template
+### 1. One-Command Installation & Auto-Setup
+
+#### macOS & Linux (Terminal)
 ```bash
-agent-comms p2p template --dir ./my-mesh
+curl -sSL https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.sh | bash
 ```
 
-### 2. Run the Verification Suite
-Execute the entire test suite and multi-machine simulations:
-
-```bash
-python tests/run_all.py
+#### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.ps1 | iex
 ```
 
-### 3. Start the Live Relay Hub (In-Session)
+#### Any OS with Pip
 ```bash
-agent-comms relay server --host 0.0.0.0 --port 8765
+pip install git+https://github.com/BlahBlah23406/agent-comms.git && agent-comms setup
+```
+
+### 2. Run the 1-Command Live Demo
+See two agents collaborate and negotiate as one mind in 2 seconds:
+```bash
+agent-comms demo
 ```
 
 ### 4. Package a Handoff (Out-of-Session)
