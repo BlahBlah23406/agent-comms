@@ -9,15 +9,47 @@ Whether you want **two agents on different computers acting as one unified mind*
 
 ---
 
-## 🚀 2-Minute Local Quickstart
+## ⚡ 1-Command Automated Installation
 
-### 1. Install Dependencies
+You don't need to clone repositories or manually configure JSON files. Run **one command** for your operating system:
+
+### Option A: macOS & Linux (Terminal)
 ```bash
-pip install -r requirements.txt
-pip install -e .
+curl -sSL https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.sh | bash
 ```
 
-### 2. Scaffold a Dual-Brain Starter Template
+### Option B: Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.ps1 | iex
+```
+
+### Option C: Any System with Pip
+```bash
+pip install git+https://github.com/BlahBlah23406/agent-comms.git && agent-comms setup
+```
+
+**What this one command does automatically:**
+1. Installs the `agent-comms` Python package and registers the global `agent-comms` CLI.
+2. Auto-detects **Claude Desktop** and injects the MCP configuration into `claude_desktop_config.json`.
+3. Auto-detects **Antigravity (`agy` & IDE)** and injects the MCP configuration into `mcp_config.json`.
+4. Auto-detects **Cursor** and injects the MCP configuration.
+5. Initializes local Context Capsule storage at `~/.agent-comms/capsules/`.
+
+---
+
+## 🎮 1-Command Live Demo
+
+Want to see two agents act as one mind in your terminal right now?
+```bash
+agent-comms demo
+```
+This boots an in-process relay, spawns Node Alpha and Node Beta, negotiates a contract, exchanges real-time cognitive deltas, and saves twin Context Capsules in 2 seconds!
+
+---
+
+## 🚀 2-Minute Custom Mesh Quickstart
+
+### 1. Scaffold a Dual-Brain Starter Template
 Run the built-in scaffolding command to create runnable peer templates:
 ```bash
 agent-comms p2p template --dir ./my-dual-brain

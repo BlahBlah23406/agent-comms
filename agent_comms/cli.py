@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List
@@ -303,6 +304,186 @@ if __name__ == "__main__":
 
 
 
+def handle_setup(args):
+    print("=" * 65)
+    print("  Agent Comms: Automated Environment & MCP Setup")
+    print("=" * 65)
+    home = Path.home()
+    configured_any = False
+
+    # 1. Initialize local capsule store
+    store_dir = home / ".agent-comms" / "capsules"
+    store_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[+] Initialized Context Capsule storage at: {store_dir}")
+
+    python_exe = sys.executable
+
+    # 2. Configure Claude Desktop
+    claude_paths = [
+        home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",  # macOS
+        Path(os.environ.get("APPDATA", "")) / "Claude" / "claude_desktop_config.json",         # Windows
+        home / ".config" / "Claude" / "claude_desktop_config.json",                         # Linux
+    ]
+    for c_path in claude_paths:
+        if c_path.parent.exists():
+            try:
+                c_data = {}
+                if c_path.exists():
+                    try:
+                        c_data = json.loads(c_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        c_data = {}
+                if "mcpServers" not in c_data:
+                    c_data["mcpServers"] = {}
+                c_data["mcpServers"]["agent-comms"] = {
+                    "command": python_exe,
+                    "args": ["-m", "agent_comms.cli", "mcp"]
+                }
+                c_path.write_text(json.dumps(c_data, indent=2), encoding="utf-8")
+                print(f"[+] Configured Claude Desktop MCP at: {c_path}")
+                configured_any = True
+                break
+            except Exception as e:
+                print(f"[!] Warning updating Claude config ({c_path}): {e}")
+
+    # 3. Configure Antigravity / Gemini
+    agy_paths = [
+        home / ".gemini" / "config" / "mcp_config.json",
+        home / ".gemini" / "antigravity" / "mcp_config.json",
+    ]
+    for a_path in agy_paths:
+        if a_path.parent.exists() or (home / ".gemini").exists():
+            try:
+                a_data = {}
+                if a_path.exists():
+                    try:
+                        a_data = json.loads(a_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        a_data = {}
+                if "mcpServers" not in a_data:
+                    a_data["mcpServers"] = {}
+                a_data["mcpServers"]["agent-comms"] = {
+                    "command": python_exe,
+                    "args": ["-m", "agent_comms.cli", "mcp"]
+                }
+                a_path.parent.mkdir(parents=True, exist_ok=True)
+                a_path.write_text(json.dumps(a_data, indent=2), encoding="utf-8")
+                print(f"[+] Configured Antigravity MCP at: {a_path}")
+                configured_any = True
+                break
+            except Exception as e:
+                print(f"[!] Warning updating Antigravity config ({a_path}): {e}")
+
+    # 4. Configure Cursor
+    cursor_paths = [
+        home / "Library" / "Application Support" / "Cursor" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "settings" / "mcp_settings.json",
+        home / ".cursor" / "mcp.json",
+    ]
+    for cur_path in cursor_paths:
+        if cur_path.parent.exists():
+            try:
+                cur_data = {}
+                if cur_path.exists():
+                    try:
+                        cur_data = json.loads(cur_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        cur_data = {}
+                if "mcpServers" not in cur_data:
+                    cur_data["mcpServers"] = {}
+                cur_data["mcpServers"]["agent-comms"] = {
+                    "command": python_exe,
+                    "args": ["-m", "agent_comms.cli", "mcp"]
+                }
+                cur_path.write_text(json.dumps(cur_data, indent=2), encoding="utf-8")
+                print(f"[+] Configured Cursor MCP at: {cur_path}")
+                configured_any = True
+                break
+            except Exception:
+                pass
+
+    print("=" * 65)
+    print("  Setup Complete! Ready to use.")
+    print("  Simply open Claude or Antigravity and prompt naturally:")
+    print('  - "Save a handoff capsule for task AUTH-01"')
+    print('  - "Resume task AUTH-01 from my latest capsule"')
+    print("=" * 65)
+
+
+async def _run_demo():
+    import socket
+    from agent_comms.mesh import DualBrainNode
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+
+    print("=" * 70)
+    print("  AGENT COMMS: LIVE DUAL-BRAIN MESH DEMO")
+    print("=" * 70)
+    print(f"[+] Spawning in-process AHRP Relay on port {port}...")
+
+    app = create_app()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    server_task = asyncio.create_task(server.serve())
+
+    for _ in range(25):
+        if server.started:
+            break
+        await asyncio.sleep(0.1)
+
+    relay_url = f"ws://127.0.0.1:{port}/ws"
+
+    print("[+] Connecting Node Alpha (Left Hemisphere)...")
+    node_alpha = DualBrainNode(agent_id="node-alpha", relay_url=relay_url, role="left-hemisphere")
+    await node_alpha.start()
+
+    print("[+] Connecting Node Beta (Right Hemisphere)...")
+    node_beta = DualBrainNode(agent_id="node-beta", relay_url=relay_url, role="right-hemisphere")
+    await node_beta.start()
+
+    print("\n--- PHASE 1: INITIAL BELIEF SHARING ---")
+    await node_alpha.set_belief("dataset_mode", "streaming_pipeline", rationale="High throughput requested")
+    await asyncio.sleep(0.2)
+    print(f"Node Beta read belief 'dataset_mode': {node_beta.get_belief('dataset_mode')}")
+
+    print("\n--- PHASE 2: DYNAMIC RUNTIME COGNITIVE DELTA ---")
+    async def on_delta(key, val, rationale):
+        print(f"* [Node Alpha <- Mind] Cognitive Delta: '{key}' = {val} | Rationale: {rationale}")
+        print(f"   Node Alpha dynamically adapted its live pipeline without restart!")
+
+    node_alpha.on_belief_update(on_delta)
+
+    print("Node Beta discovered hardware optimization: vector presorting reduces CPU branch mispredictions.")
+    await node_beta.set_belief("presort_optimization", True, rationale="35% faster execution on x86_64")
+    await asyncio.sleep(0.3)
+
+    print("\n--- PHASE 3: SYMMETRIC CONTRACT CONSENSUS ---")
+    await node_alpha.propose_contract("data_contract", {"batch_size": "int", "vectors": "List[float]"})
+    await asyncio.sleep(0.1)
+    await node_beta.lock_contract("data_contract", {"batch_size": "int", "vectors": "List[float]", "presorted": "bool"})
+    print("Locked contract 'data_contract' with mutual consensus!")
+
+    print("\n--- PHASE 4: TWIN CONTEXT CAPSULE PERSISTENCE ---")
+    cap_a = node_alpha.export_twin_capsule("DEMO-01", summary="Alpha demo complete")
+    cap_b = node_beta.export_twin_capsule("DEMO-01", summary="Beta demo complete")
+    print(f"[+] Node Alpha Context Capsule: {cap_a.capsule_id} ({len(cap_a.epistemic_learnings)} learnings)")
+    print(f"[+] Node Beta Context Capsule:  {cap_b.capsule_id} ({len(cap_b.epistemic_learnings)} learnings)")
+
+    await node_alpha.stop()
+    await node_beta.stop()
+    server.should_exit = True
+    await server_task
+
+    print("\n" + "=" * 70)
+    print("  DEMO COMPLETE: Two Agents Acted As One Mind!")
+    print("=" * 70)
+
+
+def handle_demo(args):
+    asyncio.run(_run_demo())
+
+
 def main():
     parser = argparse.ArgumentParser(prog="agent-comms", description="Agent Communication & Handover Protocol Suite")
     subparsers = parser.add_subparsers(dest="command")
@@ -390,6 +571,14 @@ def main():
     template_p = p2p_subs.add_parser("template", help="Scaffold a runnable Dual-Brain starter template")
     template_p.add_argument("--dir", default=".", help="Target directory to create template files")
     template_p.set_defaults(func=handle_p2p_template)
+
+    # --- Setup Subcommand ---
+    setup_p = subparsers.add_parser("setup", help="Auto-configure MCP for Claude Desktop, Antigravity, and Cursor")
+    setup_p.set_defaults(func=handle_setup)
+
+    # --- Demo Subcommand ---
+    demo_p = subparsers.add_parser("demo", help="One-command live simulation of Dual-Brain peer collaboration")
+    demo_p.set_defaults(func=handle_demo)
 
     parsed = parser.parse_args()
     if hasattr(parsed, "func"):
