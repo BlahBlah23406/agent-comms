@@ -22,3 +22,13 @@ This directory contains the complete technical reports, telemetry data, and repr
   * Cryptographic Merkle verification across all batches.
   * Twin Context Capsules exported on both machines.
 * **Source Code:** [`code/dual_brain_p2p/`](code/dual_brain_p2p/)
+
+### 3. [Experiment 3: 3-Way Tri-Brain Distributed Mesh](03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md)
+* **Paradigm:** Heterogeneous 3-way peer mesh ("Three Computers, Three OSs, One Mind").
+* **Nodes:** `Providence` (Windows 11) + `The-Triskelion` (macOS Apple Silicon) + `code-47` (Ubuntu Linux 24.04).
+* **Key Innovations:**
+  * Real-time full-mesh cognitive sync across 3 distinct operating systems.
+  * Apple Silicon Metal & unified memory zero-copy policy asserted from macOS.
+  * Linux kernel live load telemetry asserted from Ubuntu Cloud.
+  * All 3 nodes exported synchronized Context Capsules.
+* **Source Code:** [`code/tri_brain/`](code/tri_brain/)

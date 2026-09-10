@@ -128,6 +128,13 @@ This protocol and architecture have been validated across physical, heterogeneou
 - Live remote task invocation: Windows coordinator dynamically invoked Linux workers to harvest live kernel telemetry (`/proc/loadavg`, `/proc/meminfo`, `/proc/net/tcp`) via RPC.
 - Full report and logs: [`docs/experiments/01_ORCHESTRATOR_WORKER_EXPERIMENT.md`](docs/experiments/01_ORCHESTRATOR_WORKER_EXPERIMENT.md).
 
+### 3. 3-Way Tri-Brain Distributed Mesh ("Three OSs, Three Machines, One Mind")
+- **Heterogeneous Tri-Mesh**: `Providence` (Windows 11) + `The-Triskelion` (macOS Apple Silicon ARM64) + `code-47` (Ubuntu Linux 24.04 OCI).
+- **Full Mesh Cognitive Synchronization**: Symmetrically locked `TRI_BRAIN_CONSENSUS_V1` and propagated cognitive deltas across all 3 operating systems simultaneously.
+- **Hardware-Specific Deliberation**: Apple Silicon Metal/Neural engine policies asserted from macOS, cloud kernel telemetry asserted from Linux, ledger coordination from Windows.
+- **Synchronized Tri-Brain Persistence**: All 3 nodes exported twin Context Capsules with 100% consensus.
+- Full report and logs: [`docs/experiments/03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md`](docs/experiments/03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md).
+
 ---
 
 ## Quickstart
