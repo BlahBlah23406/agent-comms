@@ -4,6 +4,9 @@ Welcome to **Agent Comms**! This guide gets you up and running with multi-machin
 
 Whether you want **two agents on different computers acting as one unified mind** (Peer-to-Peer Dual-Brain), or **frictionless session handoff** across laptops and cloud workstations (Context Capsules), this guide provides copy-pasteable recipes and architectural patterns.
 
+> 💡 **Prefer to just chat with your AI in plain English?**  
+> If you don't want to run CLI commands, check out the [**Natural Language User Guide (`USER_GUIDE.md`)**](USER_GUIDE.md) for everyday prompt cheat sheets for Claude Desktop, Antigravity, and Cursor.
+
 ---
 
 ## 🚀 2-Minute Local Quickstart
