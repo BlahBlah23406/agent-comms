@@ -90,6 +90,17 @@ agent-comms/
 │   ├── mcp/                       # Model Context Protocol adapter
 │   │   └── server.py              # JSON-RPC MCP server
 │   └── cli.py                     # CLI entrypoint (`agent-comms`)
+├── live_experiment/               # Real-world Orchestrator/Worker experiment
+│   ├── LIVE_TEST_REPORT.md        # Report of Windows 11 <-> Ubuntu live run
+│   ├── coordinator_providence.py  # Orchestrator agent
+│   └── worker_code47.py           # Remote worker agent
+├── p2p_experiment/                # Real-world P2P Dual-Brain experiment
+│   ├── P2P_EXPERIMENT_REPORT.md   # Report of "Two Computers, One Mind" run
+│   ├── blackboard.py              # Replicated Cognitive Blackboard
+│   ├── peer_agent_windows.py      # Left Hemisphere agent
+│   ├── peer_agent_linux.py        # Right Hemisphere agent
+│   ├── peer_service_windows.py    # Windows Ingest & Verification microservice (port 9201)
+│   └── peer_service_linux.py      # Linux Numerical Transform & Merkle microservice (port 9202)
 └── tests/                         # Test and verification suite
     ├── test_capsule.py            # Unit tests for serialization & briefing
     ├── test_relay.py              # Tests for live relay, pub/sub, RPC
@@ -97,6 +108,25 @@ agent-comms/
     ├── scenario_in_session_live.py# End-to-end live peer RPC & stream simulation
     └── run_all.py                 # Master test runner
 ```
+
+---
+
+## Real-World Multi-Machine Validations
+
+This protocol and architecture have been validated across physical, heterogeneous machines (`Providence` on Windows 11 and `code-47` on Oracle Cloud Ubuntu Linux via Tailscale):
+
+### 1. Orchestrator / Worker Live Collaboration
+- Real-time planning channel on `channel.planning`.
+- Live remote task invocation: Windows coordinator dynamically invoked Linux workers to harvest live kernel telemetry (`/proc/loadavg`, `/proc/meminfo`, `/proc/net/tcp`) via RPC.
+- See full report: [`live_experiment/LIVE_TEST_REPORT.md`](live_experiment/LIVE_TEST_REPORT.md).
+
+### 2. Peer-to-Peer Dual-Brain Architecture ("Two Computers, One Mind")
+- **Multi-Server Pipeline Ring**: Ingest & verification service on Windows (`:9201`) + Numerical transform & Merkle engine on Linux (`:9202`). Neither computer could run the pipeline alone.
+- **Symmetric Interface Negotiation**: Co-equal agents negotiated and locked contracts via consensus in `<1s`.
+- **Replicated Cognitive Blackboard**: Shared mental models where cognitive deltas broadcast in real time.
+- **Live Dynamic Adaptation**: When the Linux peer discovered vector presorting improved CPU branch prediction, it asserted a cognitive delta. The Windows peer **dynamically adapted its generator on the fly without restarting services**.
+- **Twin Context Capsules**: Synchronized out-of-session handoff records saved on both nodes.
+- See full report: [`p2p_experiment/P2P_EXPERIMENT_REPORT.md`](p2p_experiment/P2P_EXPERIMENT_REPORT.md).
 
 ---
 
@@ -136,3 +166,5 @@ agent-comms relay server --host 0.0.0.0 --port 8765
 - For deep architectural comparisons with AutoGen, LangGraph, Temporal, and MCP, see [`RESEARCH_AND_COMPARISON.md`](RESEARCH_AND_COMPARISON.md).
 - For formal JSON schemas and protocol frame definitions, see [`SPECIFICATION.md`](SPECIFICATION.md).
 - For end-to-end user workflows, see [`TUTORIAL.md`](TUTORIAL.md).
+- For the Orchestrator/Worker live experiment report, see [`live_experiment/LIVE_TEST_REPORT.md`](live_experiment/LIVE_TEST_REPORT.md).
+- For the Peer-to-Peer Dual-Brain live experiment report, see [`p2p_experiment/P2P_EXPERIMENT_REPORT.md`](p2p_experiment/P2P_EXPERIMENT_REPORT.md).
