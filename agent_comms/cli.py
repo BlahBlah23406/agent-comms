@@ -187,6 +187,122 @@ def handle_mcp(args):
     asyncio.run(server.run_stdio())
 
 
+def handle_p2p_template(args):
+    target_dir = Path(args.dir).resolve()
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    peer_alpha_code = '''"""
+Dual-Brain Peer Alpha (Left Hemisphere)
+=======================================
+Demonstrates symmetric mental model sharing and runtime cognitive adaptation.
+"""
+import asyncio
+from agent_comms.mesh import DualBrainNode
+
+RELAY_URL = "ws://localhost:8765/ws"
+
+async def main():
+    async with DualBrainNode(agent_id="node-alpha", relay_url=RELAY_URL, role="left-hemisphere") as node:
+        print("[Node Alpha] Joined mesh. Establishing shared beliefs...")
+
+        # 1. Assert initial domain belief into shared mind
+        await node.set_belief("system_mode", "high_throughput", rationale="Batch workload scheduled")
+        await node.propose_contract("data_pipeline", {"batch_size": "int", "encryption": "str"})
+
+        # 2. Listen for cognitive deltas from Node Beta
+        async def on_delta(key, value, rationale):
+            print(f"[Node Alpha <- Mind] Cognitive Delta Received! '{key}' = {value} (Rationale: {rationale})")
+            if key == "execution_optimization":
+                print(f"[Node Alpha] Dynamically adapting execution pipeline: {value}")
+
+        node.on_belief_update(on_delta)
+
+        # 3. Keep running and listening
+        print("[Node Alpha] Listening for peer deltas. Press Ctrl+C to stop.")
+        await asyncio.sleep(10)
+
+        # 4. Export twin Context Capsule
+        capsule = node.export_twin_capsule(task_id="DUAL-BRAIN-QUICKSTART", summary="Dual-brain peer sync completed")
+        print(f"[Node Alpha] Persisted twin capsule: {capsule.capsule_id}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+'''
+
+    peer_beta_code = '''"""
+Dual-Brain Peer Beta (Right Hemisphere)
+========================================
+Demonstrates peer parity, contract consensus, and asserting cognitive deltas.
+"""
+import asyncio
+from agent_comms.mesh import DualBrainNode
+
+RELAY_URL = "ws://localhost:8765/ws"
+
+async def main():
+    async with DualBrainNode(agent_id="node-beta", relay_url=RELAY_URL, role="right-hemisphere") as node:
+        print("[Node Beta] Joined mesh. Connecting to shared mind...")
+
+        # 1. Wait a moment for Alpha to publish initial state
+        await asyncio.sleep(1)
+
+        # 2. Read shared belief
+        mode = node.get_belief("system_mode")
+        print(f"[Node Beta] Read shared belief 'system_mode': {mode}")
+
+        # 3. Discover an optimization and assert a cognitive delta
+        print("[Node Beta] Discovered optimization: Pre-sorting inputs increases throughput 40%!")
+        await node.set_belief("execution_optimization", "enable_vector_presort", rationale="Reduces CPU branch mispredictions")
+
+        # 4. Lock contract by consensus
+        await node.lock_contract("data_pipeline", {"batch_size": "int", "encryption": "sha256", "presorted": "bool"})
+        print("[Node Beta] Locked contract 'data_pipeline' with consensus.")
+
+        await asyncio.sleep(5)
+        capsule = node.export_twin_capsule(task_id="DUAL-BRAIN-QUICKSTART", summary="Dual-brain right hemisphere completed")
+        print(f"[Node Beta] Persisted twin capsule: {capsule.capsule_id}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+'''
+
+    runner_code = '''"""
+Dual-Brain Local Runner
+=======================
+Spawns AHRP relay in background and executes Node Alpha and Node Beta concurrently.
+"""
+import asyncio
+import subprocess
+import sys
+import time
+
+def main():
+    print("=" * 60)
+    print("Dual-Brain Mesh Quickstart")
+    print("=" * 60)
+    print("1. Ensure AHRP relay is running: agent-comms relay server --port 8765")
+    print("2. In Terminal 1: python peer_alpha.py")
+    print("3. In Terminal 2: python peer_beta.py")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()
+'''
+
+    (target_dir / "peer_alpha.py").write_text(peer_alpha_code, encoding="utf-8")
+    (target_dir / "peer_beta.py").write_text(peer_beta_code, encoding="utf-8")
+    (target_dir / "quickstart.py").write_text(runner_code, encoding="utf-8")
+
+    print(f"\n[+] Successfully scaffolded Dual-Brain template in: {target_dir}")
+    print("  - peer_alpha.py   (Left Hemisphere node)")
+    print("  - peer_beta.py    (Right Hemisphere node)")
+    print("  - quickstart.py   (Usage instructions)")
+    print("\nTo run:")
+    print("  1. Start relay:  agent-comms relay server --port 8765")
+    print("  2. Run peers:    python peer_alpha.py & python peer_beta.py\n")
+
+
+
 def main():
     parser = argparse.ArgumentParser(prog="agent-comms", description="Agent Communication & Handover Protocol Suite")
     subparsers = parser.add_subparsers(dest="command")
@@ -266,6 +382,14 @@ def main():
     mcp_p = subparsers.add_parser("mcp", help="Run Model Context Protocol stdio server")
     mcp_p.add_argument("--dir", help="Workspace root directory")
     mcp_p.set_defaults(func=handle_mcp)
+
+    # --- P2P Mesh Subcommand ---
+    p2p_parser = subparsers.add_parser("p2p", help="Peer-to-Peer Dual-Brain mesh tools")
+    p2p_subs = p2p_parser.add_subparsers(dest="subcommand")
+
+    template_p = p2p_subs.add_parser("template", help="Scaffold a runnable Dual-Brain starter template")
+    template_p.add_argument("--dir", default=".", help="Target directory to create template files")
+    template_p.set_defaults(func=handle_p2p_template)
 
     parsed = parser.parse_args()
     if hasattr(parsed, "func"):

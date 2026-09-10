@@ -70,6 +70,7 @@ CROSS-MACHINE  │ - Peer Discovery & RPC        │ - Git Diffs & Untracked Fil
 ```
 agent-comms/
 ├── README.md                      # Project overview & architecture
+├── ONBOARDING.md                  # 5-minute quickstart & developer onboarding
 ├── RESEARCH_AND_COMPARISON.md     # In-depth industry research and taxonomy
 ├── SPECIFICATION.md               # Formal protocol and schema specification
 ├── TUTORIAL.md                    # Hands-on walkthroughs and examples
@@ -79,6 +80,9 @@ agent-comms/
 │   ├── models/                    # Pydantic data models
 │   │   ├── capsule.py             # ContextCapsule, TaskGraph, EpistemicLearning
 │   │   └── protocol.py            # RelayFrame, AgentDescriptor, FrameType
+│   ├── mesh/                      # Peer-to-Peer Dual-Brain mesh engine
+│   │   ├── blackboard.py          # Replicated CognitiveBlackboard & deltas
+│   │   └── node.py                # High-level DualBrainNode agent interface
 │   ├── capsule/                   # Out-of-session handoff engine
 │   │   ├── git_sync.py            # Git diff, untracked files, patch application
 │   │   ├── packager.py            # Capsule creation and briefing generation
@@ -90,20 +94,16 @@ agent-comms/
 │   ├── mcp/                       # Model Context Protocol adapter
 │   │   └── server.py              # JSON-RPC MCP server
 │   └── cli.py                     # CLI entrypoint (`agent-comms`)
-├── live_experiment/               # Real-world Orchestrator/Worker experiment
-│   ├── LIVE_TEST_REPORT.md        # Report of Windows 11 <-> Ubuntu live run
-│   ├── coordinator_providence.py  # Orchestrator agent
-│   └── worker_code47.py           # Remote worker agent
-├── p2p_experiment/                # Real-world P2P Dual-Brain experiment
-│   ├── P2P_EXPERIMENT_REPORT.md   # Report of "Two Computers, One Mind" run
-│   ├── blackboard.py              # Replicated Cognitive Blackboard
-│   ├── peer_agent_windows.py      # Left Hemisphere agent
-│   ├── peer_agent_linux.py        # Right Hemisphere agent
-│   ├── peer_service_windows.py    # Windows Ingest & Verification microservice (port 9201)
-│   └── peer_service_linux.py      # Linux Numerical Transform & Merkle microservice (port 9202)
+├── docs/                          # Documentation & historical archives
+│   └── experiments/               # Full reports & code from multi-machine tests
+│       ├── README.md              # Index of real-world experiments
+│       ├── 01_ORCHESTRATOR_WORKER_EXPERIMENT.md
+│       ├── 02_PEER_TO_PEER_DUAL_BRAIN_EXPERIMENT.md
+│       └── code/                  # Exact reproducible scripts
 └── tests/                         # Test and verification suite
     ├── test_capsule.py            # Unit tests for serialization & briefing
     ├── test_relay.py              # Tests for live relay, pub/sub, RPC
+    ├── test_mesh.py               # Tests for Dual-Brain cognitive sync & twin capsules
     ├── scenario_out_of_session.py # End-to-end multi-machine handoff simulation
     ├── scenario_in_session_live.py# End-to-end live peer RPC & stream simulation
     └── run_all.py                 # Master test runner
@@ -115,32 +115,43 @@ agent-comms/
 
 This protocol and architecture have been validated across physical, heterogeneous machines (`Providence` on Windows 11 and `code-47` on Oracle Cloud Ubuntu Linux via Tailscale):
 
-### 1. Orchestrator / Worker Live Collaboration
-- Real-time planning channel on `channel.planning`.
-- Live remote task invocation: Windows coordinator dynamically invoked Linux workers to harvest live kernel telemetry (`/proc/loadavg`, `/proc/meminfo`, `/proc/net/tcp`) via RPC.
-- See full report: [`live_experiment/LIVE_TEST_REPORT.md`](live_experiment/LIVE_TEST_REPORT.md).
-
-### 2. Peer-to-Peer Dual-Brain Architecture ("Two Computers, One Mind")
+### 1. Peer-to-Peer Dual-Brain Architecture ("Two Computers, One Mind")
 - **Multi-Server Pipeline Ring**: Ingest & verification service on Windows (`:9201`) + Numerical transform & Merkle engine on Linux (`:9202`). Neither computer could run the pipeline alone.
 - **Symmetric Interface Negotiation**: Co-equal agents negotiated and locked contracts via consensus in `<1s`.
 - **Replicated Cognitive Blackboard**: Shared mental models where cognitive deltas broadcast in real time.
 - **Live Dynamic Adaptation**: When the Linux peer discovered vector presorting improved CPU branch prediction, it asserted a cognitive delta. The Windows peer **dynamically adapted its generator on the fly without restarting services**.
 - **Twin Context Capsules**: Synchronized out-of-session handoff records saved on both nodes.
-- See full report: [`p2p_experiment/P2P_EXPERIMENT_REPORT.md`](p2p_experiment/P2P_EXPERIMENT_REPORT.md).
+- Full report and logs: [`docs/experiments/02_PEER_TO_PEER_DUAL_BRAIN_EXPERIMENT.md`](docs/experiments/02_PEER_TO_PEER_DUAL_BRAIN_EXPERIMENT.md).
+
+### 2. Orchestrator / Worker Live Collaboration
+- Real-time planning channel on `channel.planning`.
+- Live remote task invocation: Windows coordinator dynamically invoked Linux workers to harvest live kernel telemetry (`/proc/loadavg`, `/proc/meminfo`, `/proc/net/tcp`) via RPC.
+- Full report and logs: [`docs/experiments/01_ORCHESTRATOR_WORKER_EXPERIMENT.md`](docs/experiments/01_ORCHESTRATOR_WORKER_EXPERIMENT.md).
 
 ---
 
 ## Quickstart
 
-### 1. Run the Verification Suite
+For full step-by-step onboarding, see the [**Onboarding Guide (`ONBOARDING.md`)**](ONBOARDING.md).
+
+### 1. Scaffold a Dual-Brain Template
+```bash
+agent-comms p2p template --dir ./my-mesh
+```
+
+### 2. Run the Verification Suite
 Execute the entire test suite and multi-machine simulations:
 
 ```bash
-cd C:\Users\shaya\agent-comms
 python tests/run_all.py
 ```
 
-### 2. Package a Handoff (Out-of-Session)
+### 3. Start the Live Relay Hub (In-Session)
+```bash
+agent-comms relay server --host 0.0.0.0 --port 8765
+```
+
+### 4. Package a Handoff (Out-of-Session)
 ```bash
 agent-comms capsule pack \
   --task "AUTH-01" \
@@ -150,21 +161,16 @@ agent-comms capsule pack \
   --learning "rejected:Cookie storage rejected due to CORS policy"
 ```
 
-### 3. Resume on Another Machine
+### 5. Resume on Another Machine
 ```bash
 agent-comms capsule unpack "AUTH-01"
-```
-
-### 4. Start the Live Relay Hub (In-Session)
-```bash
-agent-comms relay server --host 0.0.0.0 --port 8765
 ```
 
 ---
 
 ## Further Reading
-- For deep architectural comparisons with AutoGen, LangGraph, Temporal, and MCP, see [`RESEARCH_AND_COMPARISON.md`](RESEARCH_AND_COMPARISON.md).
-- For formal JSON schemas and protocol frame definitions, see [`SPECIFICATION.md`](SPECIFICATION.md).
-- For end-to-end user workflows, see [`TUTORIAL.md`](TUTORIAL.md).
-- For the Orchestrator/Worker live experiment report, see [`live_experiment/LIVE_TEST_REPORT.md`](live_experiment/LIVE_TEST_REPORT.md).
-- For the Peer-to-Peer Dual-Brain live experiment report, see [`p2p_experiment/P2P_EXPERIMENT_REPORT.md`](p2p_experiment/P2P_EXPERIMENT_REPORT.md).
+- [**Onboarding Guide** (`ONBOARDING.md`)](ONBOARDING.md) — 5-minute setup and recipes for dual-brain agents.
+- [**Research & Architectural Comparison** (`RESEARCH_AND_COMPARISON.md`)](RESEARCH_AND_COMPARISON.md) — Comparison against AutoGen, LangGraph, Temporal, and MCP.
+- [**Protocol Specification** (`SPECIFICATION.md`)](SPECIFICATION.md) — Formal AHRP protocol and frame schemas.
+- [**Tutorial & Recipes** (`TUTORIAL.md`)](TUTORIAL.md) — Hands-on scenarios and developer patterns.
+- [**Experiment Archives** (`docs/experiments/`)](docs/experiments/) — Detailed test reports from live internet runs.
