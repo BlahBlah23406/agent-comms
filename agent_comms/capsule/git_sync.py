@@ -100,30 +100,55 @@ class GitHelper:
             return {}
 
         untracked: Dict[str, str] = {}
+        ignored_dirs = {
+            "node_modules", ".next", ".venv", "venv", "__pycache__", ".git", ".tmp",
+            "dist", "build", "coverage", ".cache", "tmp", "temp"
+        }
+        max_untracked_count = 100
+
         for line in res.stdout.splitlines():
+            if len(untracked) >= max_untracked_count:
+                break
             line = line.strip()
             if line.startswith("?? "):
-                rel_path = line[3:].strip()
+                rel_path = line[3:].strip().replace("\\", "/")
+                # Skip known noise/heavy directories
+                parts = rel_path.split("/")
+                if any(p in ignored_dirs for p in parts):
+                    continue
+
                 full_path = self.workspace_path / rel_path
                 files_to_read = []
                 if full_path.is_file():
                     files_to_read.append((rel_path, full_path))
                 elif full_path.is_dir():
                     for sub_file in full_path.rglob("*"):
+                        if len(untracked) + len(files_to_read) >= max_untracked_count:
+                            break
+                        sub_parts = sub_file.relative_to(self.workspace_path).parts
+                        if any(p in ignored_dirs for p in sub_parts):
+                            continue
                         if sub_file.is_file():
                             sub_rel = str(sub_file.relative_to(self.workspace_path)).replace("\\", "/")
                             files_to_read.append((sub_rel, sub_file))
 
                 for f_rel, f_full in files_to_read:
-                    size_kb = f_full.stat().st_size / 1024
-                    if size_kb > max_file_size_kb:
-                        continue
+                    if len(untracked) >= max_untracked_count:
+                        break
                     try:
+                        size_kb = f_full.stat().st_size / 1024
+                        if size_kb > max_file_size_kb:
+                            continue
                         content = f_full.read_text(encoding="utf-8")
                         untracked[f_rel] = content
                     except UnicodeDecodeError:
-                        raw = f_full.read_bytes()
-                        untracked[f_rel] = "base64:" + base64.b64encode(raw).decode("ascii")
+                        try:
+                            raw = f_full.read_bytes()
+                            untracked[f_rel] = "base64:" + base64.b64encode(raw).decode("ascii")
+                        except Exception:
+                            continue
+                    except Exception:
+                        continue
         return untracked
 
     def apply_patch(self, diff_content: str) -> Tuple[bool, str]:
