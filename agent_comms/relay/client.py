@@ -47,7 +47,8 @@ class AgentRelayClient:
 
     async def connect(self):
         """Connects to the relay hub and performs registration."""
-        self.ws = await websockets.connect(self.relay_url)
+        # Connect with 32MB max frame size for high-fidelity Context Capsules
+        self.ws = await websockets.connect(self.relay_url, max_size=32 * 1024 * 1024)
         self._connected = True
 
         # Send Registration Frame

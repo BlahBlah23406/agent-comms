@@ -129,7 +129,7 @@ def handle_capsule_show(args):
 def handle_relay_server(args):
     print(f"[+] Starting AHRP Relay Server on {args.host}:{args.port}...")
     app = create_app()
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info", ws_max_size=32 * 1024 * 1024)
 
 
 async def _run_relay_peers(relay_url: str):
