@@ -139,7 +139,7 @@ Connecting two physical machines across the internet (e.g., your Windows/Mac lap
 ```
 
 ### Step 1: Start the Relay Broker on the Host Machine
-Run the relay server on any node with network visibility (e.g., your Linux server with IP `100.118.132.56` or `my-server.tailscale.net`):
+Run the relay server on any node with network visibility (e.g., your Linux server with IP `192.168.1.50` or `my-server.tailscale.net`):
 ```bash
 agent-comms relay server --host 0.0.0.0 --port 8765
 ```
@@ -147,7 +147,7 @@ agent-comms relay server --host 0.0.0.0 --port 8765
 ### Step 2: Configure Node Alpha (Laptop)
 In `peer_alpha.py`, point the `relay_url` to your server's IP:
 ```python
-RELAY_URL = "ws://100.118.132.56:8765/ws"
+RELAY_URL = "ws://192.168.1.50:8765/ws"
 node = DualBrainNode(agent_id="node-laptop", relay_url=RELAY_URL, role="planner")
 ```
 

@@ -1,195 +1,131 @@
-# Agent Comms: Universal Agent Handover & Live Relay Suite
+# Agent Comms
 
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)]()
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)]()
-[![Protocol](https://img.shields.io/badge/protocol-AHRP%20v1.0-orange.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)]()
 
-**Agent Comms** is a comprehensive, production-grade protocol and toolkit enabling AI coding agents to communicate, share work, and transfer mental models across different sessions and physical computers.
-
-> 💡 **Looking for the simplest way to use this?**  
-> Read the [**Natural Language User Guide (`USER_GUIDE.md`)**](USER_GUIDE.md) to see exact, copy-pasteable English prompts for **Claude Desktop**, **Antigravity**, and **Cursor**!
-
-It supports both:
-1. **Out-of-Session Handoff (Context Capsules):** Package an agent's epistemic discoveries, task roadmap, git diffs, and untracked files into a structured, portable capsule to resume seamlessly on another computer or future session without context window bloat.
-2. **In-Session Live Collaboration (AHRP Relay):** A real-time WebSocket event mesh enabling distributed agents on separate machines to discover peers, broadcast milestones via Pub/Sub, and execute cross-machine Remote Procedure Calls (RPC).
+> A lightweight protocol and toolkit for AI coding agents to share context, hand off tasks across sessions, and collaborate in real-time across machines.
 
 ---
 
-## Architecture Overview
+## What It Is
 
-```
-                      IN-SESSION (Live)             OUT-OF-SESSION (Persistent)
-               ┌───────────────────────────────┬────────────────────────────────┐
-               │ - Local sockets / IPC         │ - Local files / SQLite         │
-SAME MACHINE   │ - Event emitters / In-memory  │ - Antigravity Brain logs       │
-               │ - Subagent pools              │ - Git working directories      │
-               ├───────────────────────────────┼────────────────────────────────┤
-               │ - AHRP WebSocket Relay        │ - AHRP Context Capsules        │
-CROSS-MACHINE  │ - Peer Discovery & RPC        │ - Git Diffs & Untracked Files  │
-               │ - Live Topic Pub/Sub Mesh     │ - Epistemic Learnings Taxonomy │
-               └───────────────────────────────┴────────────────────────────────┘
-```
+When working with AI coding agents (Claude Desktop, Antigravity, Cursor, etc.), two major challenges arise:
+1. **Context Loss Across Sessions:** Starting a new chat or moving to another machine resets the agent's mental model and working memory.
+2. **Multi-Agent Coordination:** Agents running in different environments or physical computers cannot easily communicate, exchange state, or run coordinated tasks.
 
-```
-┌──────────────────────────────────────┐            ┌──────────────────────────────────────┐
-│        Machine A (e.g. Laptop)       │            │       Machine B (e.g. Workstation)   │
-│ ┌──────────────────────────────────┐ │            │ ┌──────────────────────────────────┐ │
-│ │   Agent A (Antigravity / Claude) │ │            │ │   Agent B (Same or Peer Agent)   │ │
-│ └─────────────────┬────────────────┘ │            │ └──────────────────▲───────────────┘ │
-│                   │                  │            │                    │                 │
-│         [Context Capsule Export]     │            │         [Context Capsule Import]     │
-│                   │                  │            │                    │                 │
-│                   ▼                  │            │                    │                 │
-│       ~/.agent-comms/capsules/ ──────┼──[Sync/S3/Git]───► ~/.agent-comms/capsules/       │
-│                                      │            │                                      │
-│       [AHRP Relay Client] ───────────┼──[Live WS]─┼──────► [AHRP Relay Client]           │
-│         - Pub/Sub milestones         │   Broker   │          - Execute remote tasks      │
-│         - Direct RPC invocation      │            │          - Stream execution logs     │
-└──────────────────────────────────────┘            └──────────────────────────────────────┘
-```
+**Agent Comms** provides a unified solution:
+- **Context Capsules (Out-of-Session Handoff):** Packages an agent's task roadmap, architectural decisions, rejected hypotheses, and uncommitted git diffs into a compact, portable bundle. The next agent session resumes immediately without burning context tokens.
+- **AHRP Live Relay (In-Session Collaboration):** A real-time WebSocket mesh supporting peer discovery, publish/subscribe messaging, and cross-machine Remote Procedure Calls (RPC).
+- **Native MCP Integration:** Works out-of-the-box with Claude Desktop, Antigravity, and Cursor via the Model Context Protocol.
 
 ---
 
-## Key Features
+## How It Works
 
-- **Context Capsule Engine:**
-  - Standardized JSON Schema preserving task progression and epistemic learnings (findings, rejected hypotheses, gotchas).
-  - Captures Git unified diffs (staged and unstaged) and untracked files without polluting commit history.
-  - Automatically synthesizes token-efficient Markdown briefings tailored for incoming agent prompts.
-- **In-Session Live Relay Hub:**
-  - High-performance FastAPI + WebSocket message broker.
-  - Topic-based Publish/Subscribe (`pipeline.progress`, `alerts`).
-  - Correlated point-to-point Remote Procedure Calls (RPC).
-  - Automatic peer discovery with capability advertising (`gpu_acceleration`, `docker_runner`).
-- **Model Context Protocol (MCP) Server:**
-  - Exposes `export_handoff_capsule`, `import_handoff_capsule`, and `list_saved_capsules` as native MCP tools for Antigravity, Claude Desktop, Cursor, and Windsurf.
-- **Unified CLI (`agent-comms`):**
-  - Instant command-line tools for packaging, inspecting, and resuming capsules, as well as testing live relays and querying online peers.
-
----
-
-## Directory Structure
+### 1. Out-of-Session Handoff (Context Capsules)
+Agent Comms captures cognitive state alongside your working tree without polluting Git commit history:
+- **State & Decisions:** Records what worked, what was rejected, and the immediate next steps.
+- **Code Diffs:** Captures staged, unstaged, and untracked changes into a clean patch.
+- **Briefing Generation:** Produces a token-efficient Markdown briefing tailored for the incoming agent.
 
 ```
-agent-comms/
-├── README.md                      # Project overview & architecture
-├── USER_GUIDE.md                  # Plain-English prompt cheat sheet (Claude/Antigravity)
-├── ONBOARDING.md                  # 5-minute quickstart & developer onboarding
-├── RESEARCH_AND_COMPARISON.md     # In-depth industry research and taxonomy
-├── SPECIFICATION.md               # Formal protocol and schema specification
-├── TUTORIAL.md                    # Hands-on walkthroughs and examples
-├── requirements.txt               # Dependencies
-├── setup.py                       # Installable package setup
-├── agent_comms/                   # Core Python package
-│   ├── models/                    # Pydantic data models
-│   │   ├── capsule.py             # ContextCapsule, TaskGraph, EpistemicLearning
-│   │   └── protocol.py            # RelayFrame, AgentDescriptor, FrameType
-│   ├── mesh/                      # Peer-to-Peer Dual-Brain mesh engine
-│   │   ├── blackboard.py          # Replicated CognitiveBlackboard & deltas
-│   │   └── node.py                # High-level DualBrainNode agent interface
-│   ├── capsule/                   # Out-of-session handoff engine
-│   │   ├── git_sync.py            # Git diff, untracked files, patch application
-│   │   ├── packager.py            # Capsule creation and briefing generation
-│   │   ├── unpacker.py            # Patch restoration and briefing injection
-│   │   └── store.py               # Local and remote capsule storage
-│   ├── relay/                     # In-session real-time message broker
-│   │   ├── server.py              # FastAPI + WebSocket hub
-│   │   └── client.py              # Asynchronous AgentRelayClient (RPC & Pub/Sub)
-│   ├── mcp/                       # Model Context Protocol adapter
-│   │   └── server.py              # JSON-RPC MCP server
-│   └── cli.py                     # CLI entrypoint (`agent-comms`)
-├── docs/                          # Documentation & historical archives
-│   └── experiments/               # Full reports & code from multi-machine tests
-│       ├── README.md              # Index of real-world experiments
-│       ├── 01_ORCHESTRATOR_WORKER_EXPERIMENT.md
-│       ├── 02_PEER_TO_PEER_DUAL_BRAIN_EXPERIMENT.md
-│       ├── 03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md
-│       └── code/                  # Exact reproducible scripts
-└── tests/                         # Test and verification suite
-    ├── test_capsule.py            # Unit tests for serialization & briefing
-    ├── test_relay.py              # Tests for live relay, pub/sub, RPC
-    ├── test_mesh.py               # Tests for Dual-Brain cognitive sync & twin capsules
-    ├── scenario_out_of_session.py # End-to-end multi-machine handoff simulation
-    ├── scenario_in_session_live.py# End-to-end live peer RPC & stream simulation
-    └── run_all.py                 # Master test runner
+Machine A (Active Session)                  Machine B (New Session)
+ ┌──────────────────────────┐                ┌──────────────────────────┐
+ │ Agent exports capsule    │──[File/Sync]──▶│ Agent imports capsule    │
+ │ (diffs + state + roadmap)│                │ (restores diffs + state) │
+ └──────────────────────────┘                └──────────────────────────┘
 ```
 
----
-
-## Real-World Multi-Machine Validations
-
-This protocol and architecture have been validated across physical, heterogeneous machines (`Providence` on Windows 11 and `code-47` on Oracle Cloud Ubuntu Linux via Tailscale):
-
-### 1. Peer-to-Peer Dual-Brain Architecture ("Two Computers, One Mind")
-- **Multi-Server Pipeline Ring**: Ingest & verification service on Windows (`:9201`) + Numerical transform & Merkle engine on Linux (`:9202`). Neither computer could run the pipeline alone.
-- **Symmetric Interface Negotiation**: Co-equal agents negotiated and locked contracts via consensus in `<1s`.
-- **Replicated Cognitive Blackboard**: Shared mental models where cognitive deltas broadcast in real time.
-- **Live Dynamic Adaptation**: When the Linux peer discovered vector presorting improved CPU branch prediction, it asserted a cognitive delta. The Windows peer **dynamically adapted its generator on the fly without restarting services**.
-- **Twin Context Capsules**: Synchronized out-of-session handoff records saved on both nodes.
-- Full report and logs: [`docs/experiments/02_PEER_TO_PEER_DUAL_BRAIN_EXPERIMENT.md`](docs/experiments/02_PEER_TO_PEER_DUAL_BRAIN_EXPERIMENT.md).
-
-### 2. Orchestrator / Worker Live Collaboration
-- Real-time planning channel on `channel.planning`.
-- Live remote task invocation: Windows coordinator dynamically invoked Linux workers to harvest live kernel telemetry (`/proc/loadavg`, `/proc/meminfo`, `/proc/net/tcp`) via RPC.
-- Full report and logs: [`docs/experiments/01_ORCHESTRATOR_WORKER_EXPERIMENT.md`](docs/experiments/01_ORCHESTRATOR_WORKER_EXPERIMENT.md).
-
-### 3. 3-Way Tri-Brain Distributed Mesh ("Three OSs, Three Machines, One Mind")
-- **Heterogeneous Tri-Mesh**: `Providence` (Windows 11) + `The-Triskelion` (macOS Apple Silicon ARM64) + `code-47` (Ubuntu Linux 24.04 OCI).
-- **Full Mesh Cognitive Synchronization**: Symmetrically locked `TRI_BRAIN_CONSENSUS_V1` and propagated cognitive deltas across all 3 operating systems simultaneously.
-- **Hardware-Specific Deliberation**: Apple Silicon Metal/Neural engine policies asserted from macOS, cloud kernel telemetry asserted from Linux, ledger coordination from Windows.
-- **Synchronized Tri-Brain Persistence**: All 3 nodes exported twin Context Capsules with 100% consensus.
-- Full report and logs: [`docs/experiments/03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md`](docs/experiments/03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md).
+### 2. In-Session Collaboration (Live Relay Mesh)
+For multi-agent workflows, a lightweight relay server coordinates agents over WebSockets:
+- **Peer Discovery:** Agents announce presence, roles, and hardware capabilities.
+- **Cognitive Blackboard:** Replicated state where agents share real-time decisions and learnings.
+- **Direct RPC:** Agents can invoke tools or run commands on peer machines.
 
 ---
 
-## Quickstart
+## How to Get It
 
-For plain-English prompt examples, see the [**Natural Language User Guide (`USER_GUIDE.md`)**](USER_GUIDE.md).
+### Installation
 
-### 1. One-Command Installation & Auto-Setup
-
-#### macOS & Linux (Terminal)
+**Using Pip:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.sh | bash
+pip install git+https://github.com/BlahBlah23406/agent-comms.git
 ```
 
-#### Windows (PowerShell)
-```powershell
-irm https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.ps1 | iex
-```
-
-#### Any OS with Pip
+**Or Clone & Install Locally:**
 ```bash
-pip install git+https://github.com/BlahBlah23406/agent-comms.git && agent-comms setup
+git clone https://github.com/BlahBlah23406/agent-comms.git
+cd agent-comms
+pip install -e .
 ```
 
-### 2. Run the 1-Command Live Demo
-See two agents collaborate and negotiate as one mind in 2 seconds:
+**One-Line Install Script:**
+- **macOS / Linux:**
+  ```bash
+  curl -sSL https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.sh | bash
+  ```
+- **Windows (PowerShell):**
+  ```powershell
+  irm https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.ps1 | iex
+  ```
+
+Run initial setup:
 ```bash
-agent-comms demo
+agent-comms setup
 ```
 
-### 4. Package a Handoff (Out-of-Session)
+---
+
+## Quick Usage
+
+### 1. Save Progress (Create a Capsule)
+Before ending a session or switching computers:
 ```bash
 agent-comms capsule pack \
   --task "AUTH-01" \
   --summary "Migrated auth module to JWT; integration test pending" \
-  --next "Run python -m unittest tests/test_auth.py" \
-  --learning "finding:PyJWT requires algorithms=['HS256']" \
-  --learning "rejected:Cookie storage rejected due to CORS policy"
+  --next "Run pytest tests/test_auth.py" \
+  --learning "finding:PyJWT requires algorithms=['HS256']"
 ```
 
-### 5. Resume on Another Machine
+### 2. Resume on Another Machine
+Restore your uncommitted files and task briefing:
 ```bash
 agent-comms capsule unpack "AUTH-01"
 ```
 
+### 3. Run the Live Collaboration Demo
+See two local agents discover each other and collaborate:
+```bash
+agent-comms demo
+```
+
+### 4. Use in Claude Desktop, Antigravity, or Cursor (MCP)
+Agent Comms includes an MCP server exposing `export_handoff_capsule`, `import_handoff_capsule`, and `list_saved_capsules`.
+
+Add to your MCP settings file:
+```json
+{
+  "mcpServers": {
+    "agent-comms": {
+      "command": "agent-comms",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Once added, interact naturally with your agent:
+> *"Save my progress into a handoff capsule for task AUTH-01."*  
+> *"Resume task AUTH-01 from my latest capsule."*
+
 ---
 
-## Further Reading
-- [**Natural Language User Guide** (`USER_GUIDE.md`)](USER_GUIDE.md) — Plain-English prompt cheat sheet for Claude Desktop, Antigravity, and Cursor.
-- [**Onboarding Guide** (`ONBOARDING.md`)](ONBOARDING.md) — 5-minute setup and recipes for dual-brain agents.
-- [**Research & Architectural Comparison** (`RESEARCH_AND_COMPARISON.md`)](RESEARCH_AND_COMPARISON.md) — Comparison against AutoGen, LangGraph, Temporal, and MCP.
-- [**Protocol Specification** (`SPECIFICATION.md`)](SPECIFICATION.md) — Formal AHRP protocol and frame schemas.
-- [**Tutorial & Recipes** (`TUTORIAL.md`)](TUTORIAL.md) — Hands-on scenarios and developer patterns.
-- [**Experiment Archives** (`docs/experiments/`)](docs/experiments/) — Detailed test reports from live internet runs.
+## Documentation
+
+- [**Natural Language User Guide** (`USER_GUIDE.md`)](USER_GUIDE.md) — Plain-English prompt examples for Claude Desktop, Antigravity, and Cursor.
+- [**Onboarding Guide** (`ONBOARDING.md`)](ONBOARDING.md) — Step-by-step developer onboarding and distributed agent recipes.
+- [**Protocol Specification** (`SPECIFICATION.md`)](SPECIFICATION.md) — Formal AHRP wire protocol and JSON schemas.
+- [**Tutorial & Recipes** (`TUTORIAL.md`)](TUTORIAL.md) — Hands-on walkthroughs and implementation examples.

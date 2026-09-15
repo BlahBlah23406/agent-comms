@@ -15,7 +15,7 @@ Here are exact phrases you can copy and paste into **Claude Desktop**, **Antigra
 | **Resume work on another computer** | *"Antigravity, please resume task AUTH-01 from my latest capsule."* | Restores your uncommitted code, unpacks any new files, and reads the summary without burning 100,000 chat tokens. |
 | **Check what work is saved** | *"What handoff capsules do I have saved?"* | Queries the local store and gives you a clean list of past tasks, authors, and dates. |
 | **Handoff a bug with tricky gotchas** | *"Package a capsule for BUG-102. Make sure to record that Postgres on Ubuntu uses port 5433 instead of 5432, and SQLite was rejected due to locking issues."* | Records the gotcha and rejected hypothesis into the capsule so the next agent doesn't repeat your mistakes. |
-| **Collaborate live with another machine** | *"Antigravity, connect to our live agent mesh on code-47 (100.118.132.56:8765) and propose a data contract to the Linux worker."* | Connects to the real-time WebSocket mesh and shares mental models live. |
+| **Collaborate live with another machine** | *"Antigravity, connect to our live agent mesh on <server-ip>:8765 and propose a data contract to the remote worker."* | Connects to the real-time WebSocket mesh and shares mental models live. |
 
 ---
 
@@ -74,7 +74,7 @@ If you want an agent on your **Mac** and an agent on your **Linux Cloud Server**
    agent-comms relay server --port 8765
    ```
 2. **Tell your local agent**:
-   > *"Launch our dual-brain peer session with code-47 over Tailscale at 100.118.132.56:8765. Have code-47 run the Linux telemetry probe while we verify the results here."*
+   > *"Launch our dual-brain peer session with remote-worker at ws://<server-ip>:8765/ws. Have the remote worker run the telemetry probe while we verify the results here."*
 
 3. **What happens:**
    Both agents join the shared **Cognitive Blackboard**. When the Linux agent discovers a performance trick (like CPU memory alignment), it broadcasts a **Cognitive Delta**, and your local agent **dynamically adapts its code on the fly without stopping the session.**
