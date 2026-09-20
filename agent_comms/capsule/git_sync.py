@@ -122,15 +122,23 @@ class GitHelper:
                 if full_path.is_file():
                     files_to_read.append((rel_path, full_path))
                 elif full_path.is_dir():
-                    for sub_file in full_path.rglob("*"):
+                    for root, dirs, files in os.walk(full_path):
+                        root_parts = Path(root).relative_to(self.workspace_path).parts
+                        if any(p in ignored_dirs for p in root_parts):
+                            dirs[:] = []
+                            continue
+                        # Prune ignored directories to avoid deep traversal
+                        dirs[:] = [d for d in dirs if d not in ignored_dirs]
+                        for f in files:
+                            if len(untracked) + len(files_to_read) >= max_untracked_count:
+                                break
+                            if f in ignored_dirs:
+                                continue
+                            f_path = Path(root) / f
+                            sub_rel = str(f_path.relative_to(self.workspace_path)).replace("\\", "/")
+                            files_to_read.append((sub_rel, f_path))
                         if len(untracked) + len(files_to_read) >= max_untracked_count:
                             break
-                        sub_parts = sub_file.relative_to(self.workspace_path).parts
-                        if any(p in ignored_dirs for p in sub_parts):
-                            continue
-                        if sub_file.is_file():
-                            sub_rel = str(sub_file.relative_to(self.workspace_path)).replace("\\", "/")
-                            files_to_read.append((sub_rel, sub_file))
 
                 for f_rel, f_full in files_to_read:
                     if len(untracked) >= max_untracked_count:
