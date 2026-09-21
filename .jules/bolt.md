@@ -1,0 +1,3 @@
+## 2023-09-20 - Inefficient Pathlib globbing for ignored directories
+**Learning:** `Path.rglob("*")` is extremely slow when dealing with large ignored directories (like `node_modules` or `.venv`) because it evaluates all files in the tree before Python-level filtering can be applied. It provides no mechanism for pruning traversal.
+**Action:** Replace `Path.rglob("*")` with `os.walk()` when filtering large directories in Python. By modifying the `dirs` list in-place (`dirs[:] = [d for d in dirs if d not in ignored_dirs]`), you prevent `os.walk` from descending into ignored paths, resulting in orders of magnitude faster execution for large repos.
