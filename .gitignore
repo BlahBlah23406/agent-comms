@@ -67,3 +67,7 @@ Thumbs.db
 # AI assistant scratch/config
 .jules/
 .cursor/
+
+# Preemptive Quota Briefing & Test scratch
+PREEMPTIVE_EVACUATION_BRIEFING.md
+tmp_test*
