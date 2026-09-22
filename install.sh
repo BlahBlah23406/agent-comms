@@ -26,8 +26,8 @@ echo "[+] Installing agent-comms..."
 $PYTHON_BIN -m pip install --upgrade --quiet "git+https://github.com/BlahBlah23406/agent-comms.git"
 
 # 3. Run automated MCP and environment setup
-echo "[+] Configuring AI assistant integrations (Claude Desktop, Antigravity, Cursor)..."
-$PYTHON_BIN -m agent_comms.cli setup
+echo "[+] Configuring AI assistant integrations (Claude Desktop, Claude Code, Antigravity, Cursor)..."
+$PYTHON_BIN -m agent_comms.cli setup "$@"
 
 echo ""
 echo "=================================================================="

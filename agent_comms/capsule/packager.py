@@ -73,7 +73,7 @@ class CapsulePackager:
             branch_name=self.git.get_current_branch() if is_git else None,
             base_commit=self.git.get_head_commit() if is_git else None,
             git_diff=self.git.get_git_diff() if is_git else None,
-            untracked_files=self.git.get_untracked_files() if is_git else {},
+            untracked_files=self.git.get_untracked_files(),
             modified_files=self.git.get_modified_files() if is_git else [],
         )
 

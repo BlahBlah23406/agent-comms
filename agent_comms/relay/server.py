@@ -102,6 +102,7 @@ def create_app(hub: Optional[RelayHub] = None) -> FastAPI:
 
     if hub is None:
         hub = RelayHub()
+    app.state.hub = hub
 
     @app.get("/health")
     async def health():
@@ -114,6 +115,10 @@ def create_app(hub: Optional[RelayHub] = None) -> FastAPI:
     @app.get("/peers", response_model=List[AgentDescriptor])
     async def list_peers():
         return hub.get_peer_descriptors()
+
+    @app.get("/capsules")
+    async def list_capsules():
+        return list(hub.capsules.values())
 
     @app.post("/capsules")
     async def upload_capsule(capsule: Dict[str, Any]):
@@ -184,7 +189,16 @@ def create_app(hub: Optional[RelayHub] = None) -> FastAPI:
                 elif frame.type == FrameType.PUBLISH and frame.topic:
                     await hub.publish_to_topic(frame.topic, frame)
 
-                elif frame.type in (FrameType.MESSAGE, FrameType.RPC_REQUEST, FrameType.RPC_RESPONSE, FrameType.STREAM_CHUNK, FrameType.STREAM_END):
+                elif frame.type in (
+                    FrameType.MESSAGE,
+                    FrameType.RPC_REQUEST,
+                    FrameType.RPC_RESPONSE,
+                    FrameType.STREAM_CHUNK,
+                    FrameType.STREAM_END,
+                    FrameType.ACTIVATE_SESSION,
+                    FrameType.SESSION_ACTIVATED,
+                    FrameType.CAPSULE_TRANSFER,
+                ):
                     if frame.target_id:
                         delivered = await hub.send_to_agent(frame.target_id, frame)
                         if not delivered and frame.type == FrameType.RPC_REQUEST:
@@ -198,6 +212,11 @@ def create_app(hub: Optional[RelayHub] = None) -> FastAPI:
                                     error=f"Target agent '{frame.target_id}' is offline.",
                                 ).model_dump_json()
                             )
+                    else:
+                        # Broadcast frame to all other connected peers
+                        for target_id in list(hub.connections.keys()):
+                            if target_id != registered_agent_id:
+                                await hub.send_to_agent(target_id, frame)
 
                 elif frame.type == FrameType.PEER_LIST_REQ:
                     peers = [p.model_dump() for p in hub.get_peer_descriptors()]

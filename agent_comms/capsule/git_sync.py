@@ -58,22 +58,24 @@ class GitHelper:
 
     def get_git_diff(self) -> str:
         """
-        Captures the unified diff of both staged and unstaged tracked modifications.
+        Captures the unified diff of both staged and unstaged tracked modifications
+        scoped to this workspace path.
         """
         if not self.is_git_repo():
             return ""
-        # HEAD diff includes both staged and unstaged tracked changes
-        res = self._run_git(["diff", "HEAD"], check=False)
+        # HEAD diff includes both staged and unstaged tracked changes in workspace
+        res = self._run_git(["diff", "HEAD", "--", "."], check=False)
         if res.returncode == 0:
             return res.stdout
         # Fallback if no commits exist yet
-        res = self._run_git(["diff"], check=False)
+        res = self._run_git(["diff", "--", "."], check=False)
         return res.stdout if res.returncode == 0 else ""
 
     def get_modified_files(self) -> List[str]:
         if not self.is_git_repo():
             return []
-        res = self._run_git(["status", "--porcelain"], check=False)
+        repo_root = self.get_repo_root() or self.workspace_path
+        res = self._run_git(["status", "--porcelain", "."], check=False)
         if res.returncode != 0:
             return []
         modified = []
@@ -82,81 +84,100 @@ class GitHelper:
             if not line:
                 continue
             status = line[:2]
-            filepath = line[3:].strip()
+            raw_path = line[3:].strip().replace("\\", "/")
             if status != "??":
-                modified.append(filepath)
+                full_path = (repo_root / raw_path).resolve()
+                try:
+                    clean_rel = str(full_path.relative_to(self.workspace_path)).replace("\\", "/")
+                except ValueError:
+                    clean_rel = raw_path
+                modified.append(clean_rel)
         return modified
 
     def get_untracked_files(self, max_file_size_kb: int = 1024) -> Dict[str, str]:
         """
         Detects untracked files and reads their contents.
         Encodes binary files with 'base64:' prefix.
+        If not a git repo, collects workspace files directly.
         """
-        if not self.is_git_repo():
-            return {}
-        # -uall forces git to list individual untracked files instead of collapsing directories
-        res = self._run_git(["status", "--porcelain", "-uall"], check=False)
-        if res.returncode != 0:
-            return {}
-
         untracked: Dict[str, str] = {}
         ignored_dirs = {
             "node_modules", ".next", ".venv", "venv", "__pycache__", ".git", ".tmp",
             "dist", "build", "coverage", ".cache", "tmp", "temp"
         }
         max_untracked_count = 100
+        files_to_read = []
 
-        for line in res.stdout.splitlines():
+        if not self.is_git_repo():
+            for root, dirs, files in os.walk(self.workspace_path):
+                dirs[:] = [d for d in dirs if d not in ignored_dirs]
+                for f in files:
+                    if len(files_to_read) >= max_untracked_count:
+                        break
+                    if f in ignored_dirs:
+                        continue
+                    f_path = Path(root) / f
+                    sub_rel = str(f_path.relative_to(self.workspace_path)).replace("\\", "/")
+                    files_to_read.append((sub_rel, f_path))
+                if len(files_to_read) >= max_untracked_count:
+                    break
+        else:
+            repo_root = self.get_repo_root() or self.workspace_path
+            res = self._run_git(["status", "--porcelain", "-uall", "."], check=False)
+            if res.returncode == 0:
+                for line in res.stdout.splitlines():
+                    if len(files_to_read) >= max_untracked_count:
+                        break
+                    line = line.strip()
+                    if line.startswith("?? "):
+                        raw_rel = line[3:].strip().replace("\\", "/")
+                        parts = raw_rel.split("/")
+                        if any(p in ignored_dirs for p in parts):
+                            continue
+
+                        full_path = (repo_root / raw_rel).resolve()
+                        try:
+                            clean_rel = str(full_path.relative_to(self.workspace_path)).replace("\\", "/")
+                        except ValueError:
+                            clean_rel = raw_rel
+
+                        if full_path.is_file():
+                            files_to_read.append((clean_rel, full_path))
+                        elif full_path.is_dir():
+                            for root, dirs, files in os.walk(full_path):
+                                root_parts = Path(root).relative_to(self.workspace_path).parts
+                                if any(p in ignored_dirs for p in root_parts):
+                                    dirs[:] = []
+                                    continue
+                                dirs[:] = [d for d in dirs if d not in ignored_dirs]
+                                for f in files:
+                                    if len(files_to_read) >= max_untracked_count:
+                                        break
+                                    if f in ignored_dirs:
+                                        continue
+                                    f_path = Path(root) / f
+                                    sub_rel = str(f_path.relative_to(self.workspace_path)).replace("\\", "/")
+                                    files_to_read.append((sub_rel, f_path))
+                                if len(files_to_read) >= max_untracked_count:
+                                    break
+
+        for f_rel, f_full in files_to_read:
             if len(untracked) >= max_untracked_count:
                 break
-            line = line.strip()
-            if line.startswith("?? "):
-                rel_path = line[3:].strip().replace("\\", "/")
-                # Skip known noise/heavy directories
-                parts = rel_path.split("/")
-                if any(p in ignored_dirs for p in parts):
+            try:
+                size_kb = f_full.stat().st_size / 1024
+                if size_kb > max_file_size_kb:
                     continue
-
-                full_path = self.workspace_path / rel_path
-                files_to_read = []
-                if full_path.is_file():
-                    files_to_read.append((rel_path, full_path))
-                elif full_path.is_dir():
-                    for root, dirs, files in os.walk(full_path):
-                        root_parts = Path(root).relative_to(self.workspace_path).parts
-                        if any(p in ignored_dirs for p in root_parts):
-                            dirs[:] = []
-                            continue
-                        # Prune ignored directories to avoid deep traversal
-                        dirs[:] = [d for d in dirs if d not in ignored_dirs]
-                        for f in files:
-                            if len(untracked) + len(files_to_read) >= max_untracked_count:
-                                break
-                            if f in ignored_dirs:
-                                continue
-                            f_path = Path(root) / f
-                            sub_rel = str(f_path.relative_to(self.workspace_path)).replace("\\", "/")
-                            files_to_read.append((sub_rel, f_path))
-                        if len(untracked) + len(files_to_read) >= max_untracked_count:
-                            break
-
-                for f_rel, f_full in files_to_read:
-                    if len(untracked) >= max_untracked_count:
-                        break
-                    try:
-                        size_kb = f_full.stat().st_size / 1024
-                        if size_kb > max_file_size_kb:
-                            continue
-                        content = f_full.read_text(encoding="utf-8")
-                        untracked[f_rel] = content
-                    except UnicodeDecodeError:
-                        try:
-                            raw = f_full.read_bytes()
-                            untracked[f_rel] = "base64:" + base64.b64encode(raw).decode("ascii")
-                        except Exception:
-                            continue
-                    except Exception:
-                        continue
+                content = f_full.read_text(encoding="utf-8")
+                untracked[f_rel] = content
+            except UnicodeDecodeError:
+                try:
+                    raw = f_full.read_bytes()
+                    untracked[f_rel] = "base64:" + base64.b64encode(raw).decode("ascii")
+                except Exception:
+                    continue
+            except Exception:
+                continue
         return untracked
 
     def apply_patch(self, diff_content: str) -> Tuple[bool, str]:

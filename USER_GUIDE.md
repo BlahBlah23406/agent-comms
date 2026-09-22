@@ -12,10 +12,13 @@ Here are exact phrases you can copy and paste into **Claude Desktop**, **Antigra
 | What You Want to Do | Exact Prompt to Use | What the AI Does |
 | :--- | :--- | :--- |
 | **Save your work before switching machines** | *"Hey Claude, please save my current progress into a handoff capsule for task AUTH-01. Note that we switched tokens to HS256 and the next step is running pytest."* | Packages your uncommitted Git diffs, saves any untracked files, structures your mental thoughts, and saves a capsule. |
-| **Resume work on another computer** | *"Antigravity, please resume task AUTH-01 from my latest capsule."* | Restores your uncommitted code, unpacks any new files, and reads the summary without burning 100,000 chat tokens. |
-| **Check what work is saved** | *"What handoff capsules do I have saved?"* | Queries the local store and gives you a clean list of past tasks, authors, and dates. |
+| **Save and upload directly to Cloud** | *"Antigravity, save my work on AUTH-01 and push the capsule to GitHub (or S3/cloud)."* | Packages the capsule and uploads directly to your configured cloud provider (Gist, S3, GCS, Azure, Relay). |
+| **Resume work from another computer** | *"Antigravity, please resume task AUTH-01 from my latest capsule (or cloud)."* | Restores your uncommitted code from local storage or downloads from cloud, and briefs the agent. |
+| **Start active cross-session between 2 machines** | *"Antigravity, start an active cross-session with my desktop GPU machine to run these benchmarks."* | Automatically scans LAN, sends wake-up signal to desktop, transmits the code capsule, and establishes live synchronization! |
+| **Preemptively save before rate limit lockout** | *"Claude, check our rate limit status. If we are running low on quota, evacuate to a handoff capsule so we can continue in Gemini."* | Proactively monitors quota, captures untracked files and diffs right before 429 exhaustion, and formats a handoff resumption prompt. |
+| **Resume after rate limit handoff** | *"Antigravity, resume our evacuated task AUTH-01 from Claude."* | Ingests the evacuation capsule, restores code, and picks up work seamlessly with zero token waste or context loss. |
+| **Check what work is saved (locally or in cloud)** | *"What handoff capsules do I have saved?"* or *"List capsules on cloud"* | Queries local store or cloud provider and gives you a clean list of past tasks, authors, and dates. |
 | **Handoff a bug with tricky gotchas** | *"Package a capsule for BUG-102. Make sure to record that Postgres on Ubuntu uses port 5433 instead of 5432, and SQLite was rejected due to locking issues."* | Records the gotcha and rejected hypothesis into the capsule so the next agent doesn't repeat your mistakes. |
-| **Collaborate live with another machine** | *"Antigravity, connect to our live agent mesh on <server-ip>:8765 and propose a data contract to the remote worker."* | Connects to the real-time WebSocket mesh and shares mental models live. |
 
 ---
 

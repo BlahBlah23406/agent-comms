@@ -44,6 +44,9 @@ class AgentRelayClient:
         self._rpc_handlers: Dict[str, Callable[[Dict[str, Any]], Coroutine[Any, Any, Any]]] = {}
         self._topic_callbacks: Dict[str, List[Callable[[RelayFrame], Coroutine[Any, Any, None]]]] = {}
         self._message_callbacks: List[Callable[[RelayFrame], Coroutine[Any, Any, None]]] = []
+        self._activation_callbacks: List[Callable[[RelayFrame], Coroutine[Any, Any, None]]] = []
+        self._session_activated_callbacks: List[Callable[[RelayFrame], Coroutine[Any, Any, None]]] = []
+        self._capsule_callbacks: List[Callable[[RelayFrame], Coroutine[Any, Any, None]]] = []
 
     async def connect(self):
         """Connects to the relay hub and performs registration."""
@@ -169,9 +172,99 @@ class AgentRelayClient:
                 except Exception as e:
                     logger.error(f"Error in message callback: {e}")
 
+        # 5. Handle Cross-Session Activation
+        if frame.type == FrameType.ACTIVATE_SESSION:
+            for cb in self._activation_callbacks:
+                try:
+                    await cb(frame)
+                except Exception as e:
+                    logger.error(f"Error in activation callback: {e}")
+
+        # 6. Handle Session Activated confirmation
+        if frame.type == FrameType.SESSION_ACTIVATED:
+            for cb in self._session_activated_callbacks:
+                try:
+                    await cb(frame)
+                except Exception as e:
+                    logger.error(f"Error in session activated callback: {e}")
+
+        # 7. Handle Direct Capsule Transfer
+        if frame.type == FrameType.CAPSULE_TRANSFER:
+            for cb in self._capsule_callbacks:
+                try:
+                    await cb(frame)
+                except Exception as e:
+                    logger.error(f"Error in capsule transfer callback: {e}")
+
     async def _send_frame(self, frame: RelayFrame):
         if self.ws:
             await self.ws.send(frame.model_dump_json())
+
+    def on_activation(self, callback: Callable[[RelayFrame], Coroutine[Any, Any, None]]):
+        """Registers a callback when an activation request is received."""
+        self._activation_callbacks.append(callback)
+
+    def on_session_activated(self, callback: Callable[[RelayFrame], Coroutine[Any, Any, None]]):
+        """Registers a callback when a peer confirms it has been activated."""
+        self._session_activated_callbacks.append(callback)
+
+    def on_capsule_transfer(self, callback: Callable[[RelayFrame], Coroutine[Any, Any, None]]):
+        """Registers a callback when a capsule is transferred directly over WebSocket."""
+        self._capsule_callbacks.append(callback)
+
+    async def activate_peer(
+        self,
+        target_id: Optional[str],
+        session_id: str,
+        relay_url: str,
+        capsule_data: Optional[Dict[str, Any]] = None,
+        task_id: Optional[str] = None,
+    ):
+        """Sends an ACTIVATE_SESSION frame to wake up a remote standby peer."""
+        frame = RelayFrame(
+            type=FrameType.ACTIVATE_SESSION,
+            sender_id=self.agent_id,
+            machine_id=self.machine_id,
+            target_id=target_id,
+            payload={
+                "session_id": session_id,
+                "relay_url": relay_url,
+                "capsule": capsule_data,
+                "task_id": task_id,
+            },
+        )
+        await self._send_frame(frame)
+
+    async def confirm_activated(
+        self,
+        target_id: str,
+        session_id: str,
+        status: str = "active",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        """Sends a SESSION_ACTIVATED frame back to the session initiator."""
+        payload = {"session_id": session_id, "status": status}
+        if details:
+            payload.update(details)
+        frame = RelayFrame(
+            type=FrameType.SESSION_ACTIVATED,
+            sender_id=self.agent_id,
+            machine_id=self.machine_id,
+            target_id=target_id,
+            payload=payload,
+        )
+        await self._send_frame(frame)
+
+    async def transfer_capsule(self, target_id: str, capsule_dict: Dict[str, Any]):
+        """Transfers a ContextCapsule directly over the WebSocket mesh."""
+        frame = RelayFrame(
+            type=FrameType.CAPSULE_TRANSFER,
+            sender_id=self.agent_id,
+            machine_id=self.machine_id,
+            target_id=target_id,
+            payload={"capsule": capsule_dict},
+        )
+        await self._send_frame(frame)
 
     def register_rpc_handler(self, method: str, handler: Callable[[Dict[str, Any]], Coroutine[Any, Any, Any]]):
         """Registers a coroutine to handle incoming RPC requests for a method."""

@@ -22,8 +22,8 @@ Write-Host "[+] Installing agent-comms from GitHub..." -ForegroundColor Green
 python -m pip install --upgrade --quiet "git+https://github.com/BlahBlah23406/agent-comms.git"
 
 # 3. Run automated setup
-Write-Host "[+] Configuring AI assistant integrations..." -ForegroundColor Green
-python -m agent_comms.cli setup
+Write-Host "[+] Configuring AI assistant integrations (Claude Desktop, Claude Code, Antigravity, Cursor)..." -ForegroundColor Green
+python -m agent_comms.cli setup @args
 
 Write-Host ""
 Write-Host "==================================================================" -ForegroundColor Cyan

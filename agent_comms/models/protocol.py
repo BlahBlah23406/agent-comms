@@ -30,6 +30,9 @@ class FrameType(str, Enum):
     HEARTBEAT = "heartbeat"
     PONG = "pong"
     ERROR = "error"
+    ACTIVATE_SESSION = "activate_session"
+    SESSION_ACTIVATED = "session_activated"
+    CAPSULE_TRANSFER = "capsule_transfer"
 
 
 class AgentDescriptor(BaseModel):

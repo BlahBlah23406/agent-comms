@@ -163,6 +163,9 @@ All messages over WebSocket are UTF-8 encoded JSON matching the `RelayFrame` spe
 | `message` | Client | Unicast point-to-point message directed to `target_id`. |
 | `rpc_request` | Client | Invokes method on target agent, awaiting correlated response. |
 | `rpc_response` | Client | Delivers return value of method correlated by `request_id`. |
+| `activate_session` | Client | Commands standby machine to awaken, receive context, and join session. |
+| `session_activated` | Client | Acknowledgment confirming target machine is awake and linked. |
+| `capsule_transfer` | Client | High-bandwidth direct Context Capsule transfer over WebSocket mesh. |
 | `heartbeat` | Client | Keepalive ping frame. |
 | `pong` | Server | Keepalive acknowledgment. |
 | `error` | Any | Error notification frame. |
@@ -179,3 +182,28 @@ All messages over WebSocket are UTF-8 encoded JSON matching the `RelayFrame` spe
    Production relay instances terminate TLS (`wss://` and `https://`) via reverse proxy (Caddy, Nginx, or Cloudflare).
 4. **Authentication:**
    Bearer token authentication header evaluated during WebSocket handshake.
+
+---
+
+## 5. AHRP-Discovery: LAN Zero-Config Beacon (UDP:8764)
+
+To eliminate manual IP configuration and firewall friction between computers on the same network, AHRP specifies a lightweight UDP discovery and wake-up protocol:
+
+### 5.1 Discovery Ping & Pong
+- **Broadcast:** Initiator sends `{"type": "DISCOVERY_PING", "machine_id": "laptop"}` to `255.255.255.255:8764`.
+- **Response:** Standby listeners reply with `{"type": "DISCOVERY_PONG", "machine_id": "desktop", "ip": "192.168.1.50", "status": "standby"}`.
+
+### 5.2 Auto-Wake Packet (`WAKE_ACTIVATE`)
+- **Broadcast:** Initiator sends `{"type": "WAKE_ACTIVATE", "session_id": "...", "relay_url": "ws://...", "capsule": {...}}`.
+- **Action:** Standby daemon receives packet, unpacks Context Capsule into local workspace, connects `DualBrainNode` to relay, and replies with `WAKE_ACK`.
+
+---
+
+## 6. AHRP-Cloud: Pluggable Cloud Repository Standard
+
+Capsules can be transferred through decentralized or cloud object storage backends:
+- **AWS S3 / Compatible (MinIO, R2, Wasabi):** `s3://<bucket>/capsules/<task_id>_<capsule_id>.json`
+- **Google Cloud Storage (GCS):** `gs://<bucket>/capsules/<task_id>_<capsule_id>.json`
+- **Azure Blob Storage:** `azure://<container>/capsules/<task_id>_<capsule_id>.json`
+- **GitHub Gists:** `github://gist/<gist_id>` (Secret Gist containing JSON and companion Markdown)
+- **Relay Hub REST:** `relay://<host>:<port>/capsules/<capsule_id>`
