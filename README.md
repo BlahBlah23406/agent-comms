@@ -121,13 +121,17 @@ Work from one machine and activate the rest with zero manual network setup:
 *Machine A automatically discovers Machine B over LAN, sends a wake-up signal, transmits the workspace capsule, and links both into an active real-time cross-session.*
 
 ### 5. Preemptive AI Rate-Limit & Quota Guard
-Never lose your work or get stuck mid-task due to AI provider quota exhaustion or rate limits (hourly, daily, weekly, or request token buckets). Agent Comms detects approaching rate limits and automatically evacuates your session into a handoff Context Capsule right before a 429 lockout:
+Never lose your work or get stuck mid-task due to AI provider quota exhaustion or rate limits (hourly, daily, weekly, or request token buckets). Agent Comms features a 3-tier safety guard that monitors active sessions and automatically freezes your session into a Context Capsule right before a lockout:
+- **Autonomous SessionWatchdog:** Runs inside the background standby daemon, actively watching Claude Code and Antigravity logs for rate-limit pauses or 429 exhaustion, and auto-generates an evacuation capsule.
+- **Claude Code Lifecycle Hooks:** Integrates deterministic `PreToolUse` and `Stop` hooks in `settings.json` to capture state immediately before a session is blocked.
+- **Workspace Briefing:** Writes `PREEMPTIVE_EVACUATION_BRIEFING.md` directly in the project root with the exact resumption prompt for successor models.
+
 ```bash
 # Check current AI provider quota usage & remaining headroom
 agent-comms quota status --provider anthropic
 
-# Set a safety budget (e.g. 50 requests/min, or 100,000 tokens/hr)
-agent-comms quota set-budget --provider anthropic --requests 50 --window hour
+# Run session watchdog in foreground (already active in background standby)
+agent-comms quota watch
 
 # Preemptively evacuate session before rate limit lockout
 agent-comms quota evacuate --task "AUTH-01" --target gemini

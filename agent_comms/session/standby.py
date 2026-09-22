@@ -87,8 +87,14 @@ class StandbyNode:
             self._relay_client.on_activation(self._handle_relay_activation)
             await self._relay_client.connect()
             logger.info("Connected standby agent to relay %s", self.default_relay_url)
+        # 3. Start background Preemptive Quota Watchdog
+        try:
+            from agent_comms.quota.watchdog import SessionWatchdog
+            self._watchdog = SessionWatchdog(config=self.config)
+            self._watchdog.start()
+            print("[*] Preemptive Quota Guard: Active Watchdog monitoring Claude & AGY sessions")
         except Exception as e:
-            logger.debug("Relay hub not immediately reachable for standby (%s); relying on LAN wake-up", e)
+            logger.debug("Could not start SessionWatchdog in standby: %s", e)
 
         print(f"\n[*] Agent Comms Standby Node Active: '{self.machine_alias}'")
         print(f"[*] Local IP: {get_local_ip()} | Listening for LAN auto-wake on UDP:{self.discovery_port}")
@@ -96,7 +102,9 @@ class StandbyNode:
         print("[+] Ready and awaiting activation from peer machines...\n")
 
     async def stop(self):
-        """Stops standby listener and any active session."""
+        """Stops standby listener, watchdog, and any active session."""
+        if hasattr(self, "_watchdog") and self._watchdog:
+            self._watchdog.stop()
         if self._listener:
             self._listener.stop()
         if self._relay_client:

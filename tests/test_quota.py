@@ -152,6 +152,45 @@ class TestQuotaGuard(unittest.TestCase):
         # Verify resumption prompt guides successor agent
         self.assertIn("gemini", capsule.resumption_prompt or "")
 
+    def test_session_watchdog_auto_evacuation(self):
+        """Tests that SessionWatchdog detects rate-limit pause in a Claude session log and evacuates."""
+        from agent_comms.quota.watchdog import SessionWatchdog
+
+        # Create a simulated Claude Code session log
+        sim_log = self.temp_dir / "sim_session.jsonl"
+        log_lines = [
+            json.dumps({"type": "user", "cwd": str(self.temp_dir), "sessionId": "session-test-888"}),
+            json.dumps({"type": "user", "lastPrompt": "Write the audio dubbing pipeline"}),
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Implemented mixer and audio sync."}]}}),
+            json.dumps({
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": "<command-name>/rate-limit-options</command-name>\n<local-command-stdout>Claude Code will continue automatically at 6:50pm. Press esc to cancel.</local-command-stdout>"
+                }
+            }),
+        ]
+        sim_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+
+        watchdog = SessionWatchdog()
+        info = watchdog.scan_session_file(sim_log)
+
+        self.assertIsNotNone(info)
+        self.assertEqual(info["session_id"], "session-test-888")
+        self.assertEqual(Path(info["workspace_dir"]).resolve(), self.temp_dir.resolve())
+        self.assertIn("rate-limit-options", info["trigger"].lower())
+
+        # Test evacuation
+        res = watchdog.evacuate(info)
+        self.assertIsNotNone(res)
+        self.assertTrue(res.evacuated)
+        self.assertIsNotNone(res.capsule_id)
+
+        # Verify briefing file created in workspace
+        briefing_file = self.temp_dir / "PREEMPTIVE_EVACUATION_BRIEFING.md"
+        self.assertTrue(briefing_file.exists())
+        self.assertIn(res.capsule_id, briefing_file.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

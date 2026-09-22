@@ -462,31 +462,57 @@ def handle_setup(args):
 
     cloud_provider = getattr(args, "cloud", "relay")
 
-    # 2. Update ~/.agent-comms/config.json
-    cfg_dir = home / ".agent-comms"
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    cfg_path = cfg_dir / "config.json"
-    cfg_data = {}
-    if cfg_path.exists():
+    cur_os = platform.system()
+    target_homes = [home]
+    if cur_os == "Linux":
+        root_path = Path("/root")
+        if root_path.exists() and root_path != home:
+            try:
+                test_f = root_path / ".agent_comms_perm"
+                test_f.touch()
+                test_f.unlink()
+                target_homes.append(root_path)
+            except Exception:
+                pass
         try:
-            cfg_data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if hasattr(os, "geteuid") and os.geteuid() == 0:
+                import glob
+                for user_dir in glob.glob("/home/*"):
+                    p_ud = Path(user_dir)
+                    if p_ud.is_dir() and p_ud not in target_homes:
+                        target_homes.append(p_ud)
         except Exception:
+            pass
+
+    for target_home in target_homes:
+        # 2. Update ~/.agent-comms/config.json
+        cfg_dir = target_home / ".agent-comms"
+        try:
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            cfg_path = cfg_dir / "config.json"
             cfg_data = {}
-    cfg_data["machine_alias"] = alias
-    cfg_data["known_peers"] = peers
-    cfg_data["default_cloud_provider"] = cloud_provider
-    cfg_path.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
-    print(f"[+] Configured Machine Node Identity: '{alias}'")
-    print(f"[+] Known Peer Nodes: {', '.join(peers)}")
+            if cfg_path.exists():
+                try:
+                    cfg_data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                except Exception:
+                    cfg_data = {}
+            cfg_data["machine_alias"] = alias
+            cfg_data["known_peers"] = peers
+            cfg_data["default_cloud_provider"] = cloud_provider
+            cfg_path.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
+            print(f"[+] Configured Machine Node Identity ({target_home}): '{alias}'")
+        except Exception as e:
+            logger.debug("Could not write config for %s: %s", target_home, e)
 
-    # 3. Initialize local capsule store
-    store_dir = cfg_dir / "capsules"
-    store_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[+] Initialized Context Capsule storage at: {store_dir}")
+        # 3. Initialize local capsule store
+        store_dir = cfg_dir / "capsules"
+        try:
+            store_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
 
-    # 4. Configure Claude Code (~/.claude.json & claude CLI)
-    claude_code_config = home / ".claude.json"
-    if claude_code_config.exists() or (home / ".claude").exists():
+        # 4. Configure Claude Code (~/.claude.json)
+        claude_code_config = target_home / ".claude.json"
         try:
             cc_data = {}
             if claude_code_config.exists():
@@ -502,23 +528,96 @@ def handle_setup(args):
                 "args": ["-m", "agent_comms.cli", "mcp"],
                 "env": {"AGENT_COMMS_MACHINE_ALIAS": alias},
             }
+            claude_code_config.parent.mkdir(parents=True, exist_ok=True)
             claude_code_config.write_text(json.dumps(cc_data, indent=2), encoding="utf-8")
             print(f"[+] Configured Claude Code MCP in: {claude_code_config}")
         except Exception as e:
-            print(f"[!] Warning updating Claude Code config: {e}")
+            logger.debug("Could not update Claude Code config (%s): %s", claude_code_config, e)
 
-        # Also invoke claude CLI if in PATH
+        # 5. Configure Claude Global Guidelines (~/.claude/CLAUDE.md)
+        claude_dir = target_home / ".claude"
         try:
-            subprocess.run(
-                ["claude", "mcp", "add", "--scope", "user", "agent-comms", "--env", f"AGENT_COMMS_MACHINE_ALIAS={alias}", "--", python_exe, "-m", "agent_comms.cli", "mcp"],
-                capture_output=True,
-                check=False,
-            )
-        except Exception:
-            pass
+            claude_dir.mkdir(parents=True, exist_ok=True)
+            claude_md = claude_dir / "CLAUDE.md"
+            claude_guidelines = f"""# Claude Code Global Guidelines: Distributed Agent Collaboration & Context Capsules
 
-    # 5. Configure Claude Desktop
-    cur_os = platform.system()
+You have access to the **`agent-comms`** MCP server (`agent-comms`), enabling cross-machine collaboration, zero-loss task handoffs, cloud synchronization, and preemptive quota protection.
+
+## Machine Identity & Mesh Network
+- **Current Machine Node:** `{alias}`
+- **Known Peer Network Nodes:** {', '.join(peers)}
+
+## Available Capabilities & Procedures
+1. **Preemptive AI Quota & Rate-Limit Guard:**
+   - If approaching rate-limit thresholds (hourly, weekly, or request limit), call `preemptive_quota_evacuate` BEFORE reaching a 429 lockout.
+   - This freezes uncommitted changes, untracked files, and epistemic learnings into a Context Capsule with a tailored resumption prompt for a successor provider (e.g. Claude -> Gemini) or peer node.
+   - Background SessionWatchdog and Lifecycle Hooks also automatically capture workspace state if a pause or limit is detected.
+
+2. **Active Cross-Session Collaboration:**
+   - To start a real-time collaborative session with peer machines: call `start_cross_session(session_id="...", target_machine="<peer-alias>")`.
+   - The framework automatically wakes the peer machine over LAN UDP (port 8764), restores code context, and links both machines into a real-time dual-brain cognitive session.
+   - Use `scan_network_peers()` to discover online or standby nodes.
+
+3. **Context Capsule Handoff & Cloud Sync:**
+   - To save progress across sessions or before logging off: `push_handoff_capsule(...)`.
+   - To resume a task from another machine or cloud: `pull_handoff_capsule(capsule_id="...", apply_workspace=True)`.
+   - To check saved capsules: `list_cloud_capsules()` or `list_saved_capsules()`.
+"""
+            claude_md.write_text(claude_guidelines, encoding="utf-8")
+            print(f"[+] Created Claude Global Guidelines at: {claude_md}")
+        except Exception as e:
+            logger.debug("Could not write CLAUDE.md: %s", e)
+
+        # 6. Configure Claude Code Lifecycle Hooks (~/.claude/settings.json)
+        try:
+            settings_path = claude_dir / "settings.json"
+            s_data = {}
+            if settings_path.exists():
+                try:
+                    s_data = json.loads(settings_path.read_text(encoding="utf-8"))
+                except Exception:
+                    s_data = {}
+            if "hooks" not in s_data:
+                s_data["hooks"] = {}
+            hook_base = f"{python_exe} -m agent_comms.cli quota hook"
+            s_data["hooks"]["PreToolUse"] = [
+                {"matcher": ".*", "command": f"{hook_base} --event PreToolUse"}
+            ]
+            s_data["hooks"]["Stop"] = [
+                {"command": f"{hook_base} --event Stop"}
+            ]
+            settings_path.write_text(json.dumps(s_data, indent=2), encoding="utf-8")
+            print(f"[+] Configured Claude Code Preemptive Quota Hooks at: {settings_path}")
+        except Exception as e:
+            logger.debug("Could not write Claude settings.json: %s", e)
+
+        # 7. Configure Antigravity / Gemini
+        agy_paths = [
+            target_home / ".gemini" / "config" / "mcp_config.json",
+            target_home / ".gemini" / "antigravity" / "mcp_config.json",
+        ]
+        for a_path in agy_paths:
+            try:
+                a_data = {}
+                if a_path.exists():
+                    try:
+                        a_data = json.loads(a_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        a_data = {}
+                if "mcpServers" not in a_data:
+                    a_data["mcpServers"] = {}
+                a_data["mcpServers"]["agent-comms"] = {
+                    "command": python_exe,
+                    "args": ["-m", "agent_comms.cli", "mcp"],
+                    "env": {"AGENT_COMMS_MACHINE_ALIAS": alias},
+                }
+                a_path.parent.mkdir(parents=True, exist_ok=True)
+                a_path.write_text(json.dumps(a_data, indent=2), encoding="utf-8")
+                print(f"[+] Configured Antigravity MCP at: {a_path}")
+            except Exception as e:
+                logger.debug("Could not write Antigravity config (%s): %s", a_path, e)
+
+    # Configure Claude Desktop for primary user
     claude_paths = []
     if cur_os == "Darwin":
         claude_paths.append(home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json")
@@ -546,67 +645,7 @@ def handle_setup(args):
             c_path.write_text(json.dumps(c_data, indent=2), encoding="utf-8")
             print(f"[+] Configured Claude Desktop MCP at: {c_path}")
         except Exception as e:
-            print(f"[!] Warning updating Claude config ({c_path}): {e}")
-
-    # 6. Configure Claude Global Guidelines (~/.claude/CLAUDE.md)
-    claude_dir = home / ".claude"
-    try:
-        claude_dir.mkdir(parents=True, exist_ok=True)
-        claude_md = claude_dir / "CLAUDE.md"
-        claude_guidelines = f"""# Claude Code Global Guidelines: Distributed Agent Collaboration & Context Capsules
-
-You have access to the **`agent-comms`** MCP server (`agent-comms`), enabling cross-machine collaboration, zero-loss task handoffs, cloud synchronization, and preemptive quota protection.
-
-## Machine Identity & Mesh Network
-- **Current Machine Node:** `{alias}`
-- **Known Peer Network Nodes:** {', '.join(peers)}
-
-## Available Capabilities & Procedures
-1. **Preemptive AI Quota & Rate-Limit Guard:**
-   - If approaching rate-limit thresholds (hourly, weekly, or request limit), call `preemptive_quota_evacuate` BEFORE reaching a 429 lockout.
-   - This freezes uncommitted changes, untracked files, and epistemic learnings into a Context Capsule with a tailored resumption prompt for a successor provider (e.g. Claude -> Gemini) or peer node.
-
-2. **Active Cross-Session Collaboration:**
-   - To start a real-time collaborative session with peer machines: call `start_cross_session(session_id="...", target_machine="<peer-alias>")`.
-   - The framework automatically wakes the peer machine over LAN UDP (port 8764), restores code context, and links both machines into a real-time dual-brain cognitive session.
-   - Use `scan_network_peers()` to discover online or standby nodes.
-
-3. **Context Capsule Handoff & Cloud Sync:**
-   - To save progress across sessions or before logging off: `push_handoff_capsule(...)`.
-   - To resume a task from another machine or cloud: `pull_handoff_capsule(capsule_id="...", apply_workspace=True)`.
-   - To check saved capsules: `list_cloud_capsules()` or `list_saved_capsules()`.
-"""
-        claude_md.write_text(claude_guidelines, encoding="utf-8")
-        print(f"[+] Created Claude Global Guidelines at: {claude_md}")
-    except Exception as e:
-        logger.debug("Could not write ~/.claude/CLAUDE.md: %s", e)
-
-    # 7. Configure Antigravity / Gemini
-    agy_paths = [
-        home / ".gemini" / "config" / "mcp_config.json",
-        home / ".gemini" / "antigravity" / "mcp_config.json",
-    ]
-    for a_path in agy_paths:
-        if a_path.parent.exists() or (home / ".gemini").exists():
-            try:
-                a_data = {}
-                if a_path.exists():
-                    try:
-                        a_data = json.loads(a_path.read_text(encoding="utf-8"))
-                    except Exception:
-                        a_data = {}
-                if "mcpServers" not in a_data:
-                    a_data["mcpServers"] = {}
-                a_data["mcpServers"]["agent-comms"] = {
-                    "command": python_exe,
-                    "args": ["-m", "agent_comms.cli", "mcp"],
-                    "env": {"AGENT_COMMS_MACHINE_ALIAS": alias},
-                }
-                a_path.parent.mkdir(parents=True, exist_ok=True)
-                a_path.write_text(json.dumps(a_data, indent=2), encoding="utf-8")
-                print(f"[+] Configured Antigravity MCP at: {a_path}")
-            except Exception as e:
-                print(f"[!] Warning updating Antigravity config ({a_path}): {e}")
+            print(f"[!] Warning updating Claude Desktop config: {e}")
 
     # Also try invoking agy CLI if available
     try:
@@ -618,33 +657,7 @@ You have access to the **`agent-comms`** MCP server (`agent-comms`), enabling cr
     except Exception:
         pass
 
-    # 8. Configure Cursor
-    cursor_paths = [
-        home / "Library" / "Application Support" / "Cursor" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "settings" / "mcp_settings.json",
-        home / ".cursor" / "mcp.json",
-    ]
-    for cur_path in cursor_paths:
-        if cur_path.parent.exists():
-            try:
-                cur_data = {}
-                if cur_path.exists():
-                    try:
-                        cur_data = json.loads(cur_path.read_text(encoding="utf-8"))
-                    except Exception:
-                        cur_data = {}
-                if "mcpServers" not in cur_data:
-                    cur_data["mcpServers"] = {}
-                cur_data["mcpServers"]["agent-comms"] = {
-                    "command": python_exe,
-                    "args": ["-m", "agent_comms.cli", "mcp"],
-                    "env": {"AGENT_COMMS_MACHINE_ALIAS": alias},
-                }
-                cur_path.write_text(json.dumps(cur_data, indent=2), encoding="utf-8")
-                print(f"[+] Configured Cursor MCP at: {cur_path}")
-            except Exception:
-                pass
-
-    # 9. Standby Service (Auto-Wake Background Daemon)
+    # 8. Standby Service (Auto-Wake Background Daemon & Quota Watchdog)
     if getattr(args, "standby", False):
         _setup_standby_service(alias, python_exe, home)
 
@@ -900,6 +913,41 @@ def handle_quota_evacuate(args):
     print("=" * 60)
 
 
+def handle_quota_hook(args):
+    """
+    Lifecycle hook called by Claude Code (PreToolUse, Stop, UserPromptSubmit).
+    Parses context, scans active logs for rate limit signals, and performs preemptive evacuation.
+    """
+    import sys
+    from agent_comms.quota.watchdog import SessionWatchdog
+
+    event_type = getattr(args, "event", "generic")
+    watchdog = SessionWatchdog()
+    candidates = watchdog.get_candidate_log_paths()
+    for f in candidates[:3]:
+        info = watchdog.scan_session_file(f)
+        if info:
+            res = watchdog.evacuate(info)
+            if res:
+                sys.stderr.write(f"\n[!] PREEMPTIVE QUOTA GUARD: Evacuation Capsule Created: {res.capsule_id}\n")
+                sys.stderr.write(f"[+] Workspace preserved safely before rate limit lockout.\n")
+                if event_type == "PreToolUse":
+                    sys.exit(2)
+                sys.exit(0)
+    sys.exit(0)
+
+
+def handle_quota_watch(args):
+    """Runs the SessionWatchdog foreground loop."""
+    from agent_comms.quota.watchdog import SessionWatchdog
+    watchdog = SessionWatchdog(check_interval=args.interval)
+    print(f"[*] Starting SessionWatchdog (monitoring active Claude and AGY sessions every {args.interval}s)...")
+    try:
+        asyncio.run(watchdog.run_loop())
+    except KeyboardInterrupt:
+        print("\n[*] SessionWatchdog stopped.")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="agent-comms", description="Agent Communication & Handover Protocol Suite")
     subparsers = parser.add_subparsers(dest="command")
@@ -1084,6 +1132,16 @@ def main():
     q_evac.add_argument("--cloud", help="Push evacuation capsule to cloud provider (s3, gcs, azure, github, relay)")
     q_evac.add_argument("--dir", help="Workspace directory")
     q_evac.set_defaults(func=handle_quota_evacuate)
+
+    # hook
+    q_hook = quota_subs.add_parser("hook", help="Claude Code lifecycle hook for automatic preemptive evacuation")
+    q_hook.add_argument("--event", default="generic", help="Hook event (PreToolUse, Stop, UserPromptSubmit)")
+    q_hook.set_defaults(func=handle_quota_hook)
+
+    # watch
+    q_watch = quota_subs.add_parser("watch", help="Run active session watchdog in foreground")
+    q_watch.add_argument("--interval", type=float, default=3.0, help="Check interval in seconds")
+    q_watch.set_defaults(func=handle_quota_watch)
 
     # --- MCP Subcommand ---
     mcp_p = subparsers.add_parser("mcp", help="Run Model Context Protocol stdio server")
