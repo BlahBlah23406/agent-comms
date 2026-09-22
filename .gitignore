@@ -63,3 +63,7 @@ venv.bak/
 # OS files
 Thumbs.db
 .DS_Store
+
+# AI assistant scratch/config
+.jules/
+.cursor/

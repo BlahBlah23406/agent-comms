@@ -454,7 +454,9 @@ def handle_setup(args):
     if peers_raw:
         peers = [p.strip() for p in peers_raw.split(",") if p.strip()]
     else:
-        peers = ["code-47", "triskelion", "providence"]
+        # No --peers and no AGENT_COMMS_PEERS: discovery is the only source of peers.
+        env_peers = os.environ.get("AGENT_COMMS_PEERS", "")
+        peers = [p.strip() for p in env_peers.split(",") if p.strip()]
     if alias not in peers:
         peers.append(alias)
 
@@ -1098,7 +1100,7 @@ def main():
 
     # --- Setup Subcommand ---
     setup_p = subparsers.add_parser("setup", help="Auto-configure MCP for Claude Desktop, Claude Code, Antigravity, and Cursor")
-    setup_p.add_argument("--alias", help="Unique node alias (e.g. providence, code-47, triskelion)")
+    setup_p.add_argument("--alias", help="Unique node alias for this machine (e.g. laptop, desktop, cloud-vm)")
     setup_p.add_argument("--peers", help="Comma-separated list of known peer aliases")
     setup_p.add_argument("--cloud", choices=["relay", "github", "s3", "gcs", "azure"], default="relay", help="Default cloud capsule provider")
     setup_p.add_argument("--standby", action="store_true", help="Generate/install background standby auto-wake service")

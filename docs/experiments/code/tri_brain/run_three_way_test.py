@@ -23,14 +23,14 @@ async def run_three_way_test():
     print("Node 1: Providence (Windows 11)")
     print("Node 2: The-Triskelion (macOS Apple Silicon ARM64)")
     print("Node 3: code-47 (Oracle Cloud Ubuntu Linux x86_64)")
-    print("Relay Hub: ws://100.118.132.56:8765/ws")
+    print("Relay Hub: ws://<relay-host>:8765/ws")
     print("=" * 80)
 
     # 1. Copy node_mac.py to The-Triskelion
     print("\n[Orchestrator] Synchronizing node_mac.py to The-Triskelion...")
     mac_script = str(PROJECT_ROOT / "tests" / "tri_brain" / "node_mac.py")
     subprocess.run(
-        f'scp -i C:\\Users\\shaya\\.ssh\\id_ed25519 "{mac_script}" the-triskelion:/tmp/node_mac.py',
+        f'scp -i <ssh-key-path> "{mac_script}" the-triskelion:/tmp/node_mac.py',
         shell=True,
         check=True,
     )
@@ -39,7 +39,7 @@ async def run_three_way_test():
     print("[Orchestrator] Synchronizing node_linux.py to code-47...")
     linux_script = str(PROJECT_ROOT / "tests" / "tri_brain" / "node_linux.py")
     subprocess.run(
-        f'scp -i C:\\Users\\shaya\\.ssh\\id_ed25519 "{linux_script}" ubuntu@163.192.23.121:/tmp/node_linux.py',
+        f'scp -i <ssh-key-path> "{linux_script}" ubuntu@<linux-node-host>:/tmp/node_linux.py',
         shell=True,
         check=True,
     )
@@ -50,11 +50,11 @@ async def run_three_way_test():
     cmd_linux = [
         "ssh",
         "-i",
-        "C:\\Users\\shaya\\.ssh\\id_ed25519",
+        "<ssh-key-path>",
         "-n",
         "-o",
         "StrictHostKeyChecking=no",
-        "ubuntu@163.192.23.121",
+        "ubuntu@<linux-node-host>",
         "python3 /tmp/node_linux.py",
     ]
     proc_linux = await asyncio.create_subprocess_exec(
@@ -67,7 +67,7 @@ async def run_three_way_test():
     cmd_mac = [
         "ssh",
         "-i",
-        "C:\\Users\\shaya\\.ssh\\id_ed25519",
+        "<ssh-key-path>",
         "-n",
         "-o",
         "StrictHostKeyChecking=no",

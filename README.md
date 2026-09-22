@@ -1,6 +1,6 @@
 # Agent Comms
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)]()
+[![Tests](https://github.com/BlahBlah23406/agent-comms/actions/workflows/tests.yml/badge.svg)](https://github.com/BlahBlah23406/agent-comms/actions/workflows/tests.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)]()
 

@@ -9,7 +9,7 @@ This live test demonstrates real-time cross-machine communication and planning b
 | **Node A** | `code-47` | Ubuntu Linux 24.04 LTS (Kernel 6.17) | Oracle Cloud Infrastructure | `agy-code47-worker` | Linux Systems & Telemetry Worker |
 | **Node B** | `Providence` | Windows 11 Pro (x86_64) | Local Workstation | `agy-providence-coordinator` | Architect & Central Aggregator |
 
-* **Network Transport:** Encrypted Tailscale mesh (`100.118.132.56`) & Public IP (`163.192.23.121`).
+* **Network Transport:** Encrypted Tailscale mesh (`<relay-host>`) & Public IP (`<linux-node-host>`).
 * **Protocol:** Agent Handover & Relay Protocol (AHRP v1.0.0).
 
 ---

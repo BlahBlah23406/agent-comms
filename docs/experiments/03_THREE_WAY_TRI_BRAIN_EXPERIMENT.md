@@ -6,9 +6,9 @@ Following the success of the two-node Dual-Brain model, we executed a **Three-Wa
 
 | Node | Hostname | OS / Hardware | Network Location | Role in Tri-Brain |
 | :--- | :--- | :--- | :--- | :--- |
-| **Node 1** | `Providence` | Windows 11 Pro (x86_64) | Workstation (`100.74.182.18`) | Architect & Coordinator |
-| **Node 2** | `The-Triskelion` | macOS Apple Silicon (ARM64) | Laptop (`100.89.238.7`) | Frontal Cortex (Metal/Neural Engine) |
-| **Node 3** | `code-47` | Ubuntu Linux 24.04 (x86_64) | Oracle Cloud Infrastructure (`100.118.132.56`) | Backend Cloud Worker & Telemetry |
+| **Node 1** | `Providence` | Windows 11 Pro (x86_64) | Workstation (`<windows-node-host>`) | Architect & Coordinator |
+| **Node 2** | `The-Triskelion` | macOS Apple Silicon (ARM64) | Laptop (`<mac-node-host>`) | Frontal Cortex (Metal/Neural Engine) |
+| **Node 3** | `code-47` | Ubuntu Linux 24.04 (x86_64) | Oracle Cloud Infrastructure (`<relay-host>`) | Backend Cloud Worker & Telemetry |
 
 * **Protocol Transport:** Encrypted Tailscale WAN + WebSocket AHRP Relay Hub on `code-47:8765`.
 * **Mental Model Synchronization:** Replicated [`CognitiveBlackboard`](../../agent_comms/mesh/blackboard.py) with real-time cognitive deltas (`COGNITIVE_DELTA`).
@@ -17,7 +17,7 @@ Following the success of the two-node Dual-Brain model, we executed a **Three-Wa
 
 ## 2. Execution Trajectory & Live Dialogue
 
-All three nodes launched concurrently and connected to `ws://100.118.132.56:8765/ws`:
+All three nodes launched concurrently and connected to `ws://<relay-host>:8765/ws`:
 
 ```
 ================================================================================
@@ -26,7 +26,7 @@ STARTING 3-WAY LIVE TRI-BRAIN TEST
 Node 1: Providence (Windows 11)
 Node 2: The-Triskelion (macOS Apple Silicon ARM64)
 Node 3: code-47 (Oracle Cloud Ubuntu Linux x86_64)
-Relay Hub: ws://100.118.132.56:8765/ws
+Relay Hub: ws://<relay-host>:8765/ws
 ================================================================================
 
 [WIN11     ] [Windows Node] Booting Tri-Brain node on Providence (Windows 11)...

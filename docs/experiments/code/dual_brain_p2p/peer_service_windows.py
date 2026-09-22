@@ -20,7 +20,7 @@ import urllib.request
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-LINUX_NODE_URL = "http://100.118.132.56:9202"
+LINUX_NODE_URL = "http://<relay-host>:9202"
 PORT = 9201
 
 verified_ledger: List[Dict] = []

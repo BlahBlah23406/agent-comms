@@ -29,7 +29,7 @@ import p2p_experiment.peer_service_windows as service
 
 
 class PeerAgentWindows:
-    def __init__(self, relay_url: str = "ws://100.118.132.56:8765/ws"):
+    def __init__(self, relay_url: str = "ws://<relay-host>:8765/ws"):
         self.agent_id = "peer-alpha-windows"
         self.machine_id = "providence-win11"
         self.relay_url = relay_url
@@ -112,12 +112,12 @@ class PeerAgentWindows:
         })
 
         # Wait for Linux peer service to be ready via direct health check
-        print(f"[{self.agent_id}] Probing Linux Peer Service on http://100.118.132.56:9202/health...")
+        print(f"[{self.agent_id}] Probing Linux Peer Service on http://<relay-host>:9202/health...")
         import urllib.request
         service_online = False
         for _ in range(30):
             try:
-                with urllib.request.urlopen("http://100.118.132.56:9202/health", timeout=2) as resp:
+                with urllib.request.urlopen("http://<relay-host>:9202/health", timeout=2) as resp:
                     if resp.status == 200:
                         service_online = True
                         print(f"[{self.agent_id}] Linux Peer Service is ONLINE and responding on port 9202!")
@@ -189,7 +189,7 @@ class PeerAgentWindows:
 
     async def package_twin_capsule(self):
         store = CapsuleStore(base_dir=Path("C:/Users/shaya/.agent-comms/capsules"))
-        packager = CapsulePackager(workspace_path=Path("C:/Users/shaya/agent-comms/p2p_experiment"), store=store)
+        packager = CapsulePackager(workspace_path=Path("~/agent-comms/p2p_experiment"), store=store)
 
         learnings = [
             EpistemicLearning(

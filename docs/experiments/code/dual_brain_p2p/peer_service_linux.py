@@ -20,7 +20,7 @@ import urllib.request
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-WINDOWS_NODE_URL = "http://100.74.182.18:9201"
+WINDOWS_NODE_URL = "http://<windows-node-host>:9201"
 PORT = 9202
 
 processed_count: int = 0

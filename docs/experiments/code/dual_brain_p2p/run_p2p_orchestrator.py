@@ -18,8 +18,8 @@ from pathlib import Path
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-SSH_KEY = "C:/Users/shaya/.ssh/id_ed25519"
-CODE47_IP = "163.192.23.121"
+SSH_KEY = "~/.ssh/id_ed25519"
+CODE47_IP = "<linux-node-host>"
 
 
 async def main():
@@ -43,14 +43,14 @@ async def main():
 
     # Step 2: Launch Peer Alpha (Windows) on Providence
     print("[P2P Orchestrator] Starting Peer Alpha (Left Hemisphere) on Providence...\n")
-    alpha_script = Path("C:/Users/shaya/agent-comms/p2p_experiment/peer_agent_windows.py")
+    alpha_script = Path("~/agent-comms/p2p_experiment/peer_agent_windows.py")
 
     alpha_proc = await asyncio.create_subprocess_exec(
         sys.executable,
         str(alpha_script),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        cwd=str(Path("C:/Users/shaya/agent-comms")),
+        cwd=str(Path("~/agent-comms")),
     )
 
     # Stream output live

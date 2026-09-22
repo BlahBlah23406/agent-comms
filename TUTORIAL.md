@@ -9,7 +9,7 @@ This tutorial walks you through practical, real-world workflows using the **Agen
 From the `agent-comms` directory, install in editable mode or install dependencies:
 
 ```bash
-cd C:\Users\shaya\agent-comms
+cd %USERPROFILE%gent-comms
 pip install -e .
 ```
 

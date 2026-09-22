@@ -13,7 +13,7 @@ import sys
 from agent_comms.mesh import DualBrainNode
 from agent_comms.models.capsule import EpistemicLearning, LearningCategory
 
-RELAY_URL = "ws://100.118.132.56:8765/ws"
+RELAY_URL = "ws://<relay-host>:8765/ws"
 
 
 async def run_windows_node():

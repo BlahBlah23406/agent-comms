@@ -12,9 +12,9 @@ import sys
 import time
 from pathlib import Path
 
-SSH_KEY = "C:/Users/shaya/.ssh/id_ed25519"
-CODE47_IP = "163.192.23.121"
-RELAY_TAILSCALE_URL = "ws://100.118.132.56:8765/ws"
+SSH_KEY = "~/.ssh/id_ed25519"
+CODE47_IP = "<linux-node-host>"
+RELAY_TAILSCALE_URL = "ws://<relay-host>:8765/ws"
 
 
 async def main():
@@ -44,7 +44,7 @@ async def main():
 
     # Step 2: Launch Coordinator Agent on Providence
     print("[Orchestrator] Starting Coordinator Agent session on Providence...\n")
-    coordinator_script = Path("C:/Users/shaya/agent-comms/live_experiment/coordinator_providence.py")
+    coordinator_script = Path("~/agent-comms/live_experiment/coordinator_providence.py")
 
     coordinator_proc = await asyncio.create_subprocess_exec(
         sys.executable,
