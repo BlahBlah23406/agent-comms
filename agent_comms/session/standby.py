@@ -87,6 +87,9 @@ class StandbyNode:
             self._relay_client.on_activation(self._handle_relay_activation)
             await self._relay_client.connect()
             logger.info("Connected standby agent to relay %s", self.default_relay_url)
+        except Exception as e:
+            logger.debug("Relay hub not immediately reachable for standby (%s); relying on LAN wake-up", e)
+
         # 3. Start background Preemptive Quota Watchdog
         try:
             from agent_comms.quota.watchdog import SessionWatchdog
