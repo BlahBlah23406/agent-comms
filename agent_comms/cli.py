@@ -9,11 +9,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
+import platform
+import socket
+import subprocess
 import sys
 from pathlib import Path
 from typing import List
 import uvicorn
+
+logger = logging.getLogger("agent_comms.cli")
 from agent_comms.capsule.packager import CapsulePackager
 from agent_comms.capsule.store import CapsuleStore
 from agent_comms.capsule.unpacker import CapsuleUnpacker
