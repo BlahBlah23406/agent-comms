@@ -126,6 +126,7 @@ class UDPDiscoveryListener:
             self._sock = None
 
     async def _listen_loop(self):
+        # sock_recvfrom() is 3.11+, which is what sets this package's minimum.
         loop = asyncio.get_running_loop()
         while self._running and self._sock:
             try:
