@@ -160,6 +160,11 @@ class StandbyNode:
         Wakes up the node, restores workspace context if capsule provided,
         and connects to the live cross-session mesh.
         """
+        if self._is_active and getattr(self, "_active_session_id", None) == session_id:
+            logger.info("Session '%s' is already active on this node. Ignoring duplicate activation.", session_id)
+            return
+
+        self._active_session_id = session_id
         effective_relay = relay_url or self.default_relay_url
         print(f"[+] Activating collaborative agent on session '{session_id}'...")
         print(f"[+] Connecting to session relay: {effective_relay}")

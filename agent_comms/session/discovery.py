@@ -191,6 +191,48 @@ class UDPDiscoveryBroadcaster:
         self.port = port
         self.machine_id = socket.gethostname()
 
+    def _get_destinations(self, target_machine: Optional[str] = None) -> List[tuple]:
+        """Collects destination addresses for discovery and wake packets across LAN and mesh peers."""
+        dests = [("<broadcast>", self.port), ("127.0.0.1", self.port)]
+        candidates = set()
+        if target_machine and target_machine != "*":
+            candidates.add(target_machine)
+            if target_machine.startswith("the-"):
+                candidates.add(target_machine[4:])
+            else:
+                candidates.add(f"the-{target_machine}")
+
+        own_alias = ""
+        try:
+            from agent_comms.config import ConfigManager
+            cfg = ConfigManager()
+            own_alias = (cfg.get("machine_alias") or "").lower()
+            for p in cfg.get("known_peers", []):
+                candidates.add(p)
+                if p.startswith("the-"):
+                    candidates.add(p[4:])
+                else:
+                    candidates.add(f"the-{p}")
+        except Exception:
+            pass
+
+        my_names = {self.machine_id.lower(), socket.gethostname().lower(), own_alias, "localhost"}
+        my_ips = {"127.0.0.1", get_local_ip()}
+
+        seen_ips = {"127.0.0.1"}
+        for host in candidates:
+            if host.lower() in my_names:
+                continue
+            try:
+                resolved_ip = socket.gethostbyname(host)
+                if resolved_ip in my_ips or resolved_ip in seen_ips:
+                    continue
+                seen_ips.add(resolved_ip)
+                dests.append((resolved_ip, self.port))
+            except Exception:
+                dests.append((host, self.port))
+        return dests
+
     async def discover_peers(self, timeout: float = 1.5) -> List[DiscoveredPeer]:
         """Broadcasts DISCOVERY_PING and collects responses from standby peers."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -207,11 +249,11 @@ class UDPDiscoveryBroadcaster:
         peers: Dict[str, DiscoveredPeer] = {}
         loop = asyncio.get_running_loop()
 
-        for dest in [("<broadcast>", self.port), ("127.0.0.1", self.port)]:
+        for dest in self._get_destinations():
             try:
                 sock.sendto(data, dest)
             except Exception as e:
-                logger.debug("Broadcast send error to %s: %s", dest, e)
+                logger.debug("Discovery send error to %s: %s", dest, e)
 
         start_time = asyncio.get_running_loop().time()
         while asyncio.get_running_loop().time() - start_time < timeout:
@@ -223,10 +265,11 @@ class UDPDiscoveryBroadcaster:
                 packet = json.loads(resp_data.decode("utf-8"))
                 if packet.get("type") == "DISCOVERY_PONG":
                     p_id = packet.get("machine_id", addr[0])
+                    reachable_ip = addr[0] if addr and addr[0] not in ("127.0.0.1", "localhost") else packet.get("ip", addr[0])
                     peers[p_id] = DiscoveredPeer(
                         machine_id=packet.get("machine_id", p_id),
                         machine_alias=packet.get("machine_alias", p_id),
-                        ip=packet.get("ip", addr[0]),
+                        ip=reachable_ip,
                         port=packet.get("port", self.port),
                         os_name=packet.get("os_name", "unknown"),
                         status=packet.get("status", "standby"),
@@ -288,7 +331,7 @@ class UDPDiscoveryBroadcaster:
         responses: List[Dict[str, Any]] = []
         loop = asyncio.get_running_loop()
 
-        for dest in [("<broadcast>", self.port), ("127.0.0.1", self.port)]:
+        for dest in self._get_destinations(target_machine):
             try:
                 sock.sendto(data, dest)
             except Exception as e:
