@@ -8,6 +8,7 @@ and CapsuleStore cloud push/pull integrations.
 import asyncio
 import json
 import socket
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -61,8 +62,7 @@ def create_sample_capsule(task_id: str = "CLOUD-TEST-01") -> ContextCapsule:
 class TestCloudStorage(unittest.TestCase):
 
     def setUp(self):
-        self.temp_store_dir = Path("./tmp_test_capsules").resolve()
-        self.temp_store_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_store_dir = Path(tempfile.mkdtemp(prefix="agent_comms_test_capsules_")).resolve()
         self.store = CapsuleStore(base_dir=self.temp_store_dir)
         self.capsule = create_sample_capsule()
 

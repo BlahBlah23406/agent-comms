@@ -6,10 +6,11 @@ CrossSessionManager active multi-machine synchronization.
 """
 
 import asyncio
+import shutil
 import socket
+import tempfile
 import unittest
 from pathlib import Path
-import shutil
 
 from agent_comms.capsule.store import CapsuleStore
 from agent_comms.mesh.node import DualBrainNode
@@ -43,8 +44,7 @@ def get_free_udp_port() -> int:
 class TestCrossSession(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
-        self.temp_dir = Path("./tmp_test_session").resolve()
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir = Path(tempfile.mkdtemp(prefix="agent_comms_test_session_")).resolve()
 
     async def asyncTearDown(self):
         if self.temp_dir.exists():

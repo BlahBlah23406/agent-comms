@@ -32,7 +32,13 @@ class GitHelper:
     def is_git_repo(self) -> bool:
         try:
             res = self._run_git(["rev-parse", "--is-inside-work-tree"], check=False)
-            return res.returncode == 0 and res.stdout.strip() == "true"
+            if res.returncode != 0 or res.stdout.strip() != "true":
+                return False
+            # Check if this workspace path is ignored by an enclosing git repository
+            res_ignore = self._run_git(["check-ignore", "-q", "."], check=False)
+            if res_ignore.returncode == 0:
+                return False
+            return True
         except FileNotFoundError:
             return False
 

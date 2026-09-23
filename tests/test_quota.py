@@ -6,9 +6,10 @@ and QuotaGuard preemptive Context Capsule generation for seamless handoff.
 """
 
 import json
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
-import shutil
 
 from agent_comms.capsule.store import CapsuleStore
 from agent_comms.quota.guard import QuotaGuard
@@ -19,8 +20,7 @@ from agent_comms.quota.tracker import QuotaTracker
 class TestQuotaGuard(unittest.TestCase):
 
     def setUp(self):
-        self.temp_dir = Path("./tmp_test_quota").resolve()
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir = Path(tempfile.mkdtemp(prefix="agent_comms_test_quota_")).resolve()
         self.tracker = QuotaTracker(data_path=self.temp_dir)
         self.store = CapsuleStore(base_dir=self.temp_dir / "capsules")
         self.guard = QuotaGuard(
