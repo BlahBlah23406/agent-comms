@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Tuple
 class GitHelper:
     def __init__(self, workspace_path: Path):
         self.workspace_path = workspace_path.resolve()
+        self._is_git_repo_cache: Optional[bool] = None
+        self._repo_root_cache: Optional[Path] = None
 
     def _run_git(self, args: List[str], check: bool = True) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -30,24 +32,33 @@ class GitHelper:
         )
 
     def is_git_repo(self) -> bool:
+        if self._is_git_repo_cache is not None:
+            return self._is_git_repo_cache
         try:
             res = self._run_git(["rev-parse", "--is-inside-work-tree"], check=False)
             if res.returncode != 0 or res.stdout.strip() != "true":
+                self._is_git_repo_cache = False
                 return False
             # Check if this workspace path is ignored by an enclosing git repository
             res_ignore = self._run_git(["check-ignore", "-q", "."], check=False)
             if res_ignore.returncode == 0:
+                self._is_git_repo_cache = False
                 return False
+            self._is_git_repo_cache = True
             return True
         except FileNotFoundError:
+            self._is_git_repo_cache = False
             return False
 
     def get_repo_root(self) -> Optional[Path]:
         if not self.is_git_repo():
             return None
+        if self._repo_root_cache is not None:
+            return self._repo_root_cache
         res = self._run_git(["rev-parse", "--show-toplevel"], check=False)
         if res.returncode == 0:
-            return Path(res.stdout.strip())
+            self._repo_root_cache = Path(res.stdout.strip())
+            return self._repo_root_cache
         return None
 
     def get_current_branch(self) -> str:
