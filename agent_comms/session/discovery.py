@@ -9,6 +9,7 @@ Uses lightweight UDP broadcast beacons (port 8764 by default).
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import platform
@@ -20,8 +21,12 @@ logger = logging.getLogger("agent_comms.session.discovery")
 DEFAULT_DISCOVERY_PORT = 8764
 
 
+@functools.lru_cache(maxsize=1)
 def get_local_ip() -> str:
-    """Discovers the active local network IP of this machine."""
+    """
+    Discovers the active local network IP of this machine.
+    Cached to prevent excessive socket creations during LAN broadcast loops.
+    """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         # Does not actually transmit or require reachability
