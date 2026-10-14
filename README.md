@@ -41,6 +41,21 @@ The hardest part was making cross-machine setup feel like zero setup. NAT, firew
 
 ---
 
+## Cross-Machine Demo
+
+The video below shows a real capsule packed on **Providence (Windows)** and unpacked on **Code-47 (Linux)** with zero context loss.
+
+![Cross-Machine Context Capsule Demo](cross-machine-demo.gif)
+
+**What happens:**
+1. On Providence, `agent-comms capsule pack` creates `DEMO-01` with a summary, next step, and epistemic learning.
+2. The capsule file is copied to Code-47 over SSH.
+3. On Code-47, `agent-comms capsule unpack DEMO-01` restores the exact task briefing — task ID, summary, next action, and learning all intact.
+
+This is the out-of-session handoff problem solved end-to-end across two physical machines.
+
+---
+
 ## How It Works
 
 ### 1. Out-of-Session Handoff (Context Capsules)
