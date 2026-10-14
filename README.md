@@ -6,6 +6,14 @@
 
 > A lightweight protocol and toolkit for AI coding agents to share context, hand off tasks across sessions, and collaborate in real-time across machines.
 
+![Agent Comms Demo](demo.gif)
+
+---
+
+## TL;DR
+
+Agent Comms lets AI coding agents (Claude, Antigravity, Cursor) share working memory across sessions and machines. Pack a context capsule on one computer, resume on another — no context lost.
+
 ---
 
 ## What It Is
@@ -18,6 +26,18 @@ When working with AI coding agents (Claude Desktop, Antigravity, Cursor, etc.), 
 - **Context Capsules (Out-of-Session Handoff):** Packages an agent's task roadmap, architectural decisions, rejected hypotheses, and uncommitted git diffs into a compact, portable bundle. The next agent session resumes immediately without burning context tokens.
 - **AHRP Live Relay (In-Session Collaboration):** A real-time WebSocket mesh supporting peer discovery, publish/subscribe messaging, and cross-machine Remote Procedure Calls (RPC).
 - **Native MCP Integration:** Works out-of-the-box with Claude Desktop, Antigravity, and Cursor via the Model Context Protocol.
+
+---
+
+## The Engineering Story
+
+The problem hit me every time I started a fresh agent session: hours of reasoning — rejected paths, working hypotheses, uncommitted diffs — vanished the moment the chat reset or I switched machines. Existing tools saved *code*, but they didn't save the *mind* behind it. I kept losing the cognitive thread.
+
+The breakthrough was separating **cognitive state** from the git tree. A git stash stores a patch; a **Context Capsule** stores the patch *plus* the roadmap, the dead ends, and the exact next step. That single shift turned a resume from "figure it out again" into "continue immediately."
+
+Once capsules solved handoff, I wanted agents to talk *while* they worked. **AHRP Live Relay** gives them a real-time WebSocket mesh: peer discovery, shared beliefs, and direct RPC across machines. Two agents on different computers can literally negotiate a contract and adapt each other's pipelines without human intervention.
+
+The hardest part was making cross-machine setup feel like zero setup. NAT, firewall rules, and dynamic IPs made peer discovery painful. I solved it by combining LAN multicast for local discovery with a lightweight cloud rendezvous fallback, so a one-line `agent-comms setup --peers ...` just works whether machines are on the same desk or across cities.
 
 ---
 
@@ -64,11 +84,11 @@ pip install -e .
 **One-Line Install Script:**
 - **macOS / Linux:**
   ```bash
-  curl -sSL https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.sh | bash
+  curl -sSL https://raw.githubusercontent.com/BlahBlah23406/agent-comms/main/install.sh | bash
   ```
 - **Windows (PowerShell):**
   ```powershell
-  irm https://raw.githubusercontent.com/BlahBlah23406/agent-comms/master/install.ps1 | iex
+  irm https://raw.githubusercontent.com/BlahBlah23406/agent-comms/main/install.ps1 | iex
   ```
 
 Run initial setup:
