@@ -4,9 +4,9 @@ from setuptools import find_packages, setup
 
 setup(
     name="agent-comms",
-    version="1.0.0",
+    version="1.1.0",
     description=(
-        "Context handover and live relay for AI coding agents across sessions and machines"
+        "Unified storage, context handover, and live relay for AI coding agents across sessions and machines"
     ),
     long_description=Path("README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",

@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 from typing import List
 import uvicorn
+import urllib.request
+import urllib.error
 
 logger = logging.getLogger("agent_comms.cli")
 from agent_comms.capsule.packager import CapsulePackager
@@ -64,7 +66,8 @@ def handle_capsule_pack(args):
         out_p.write_text(capsule.model_dump_json(indent=2), encoding="utf-8")
         saved_path = out_p
     else:
-        saved_path = store.save(capsule)
+        push_remote = getattr(args, "sync", None)
+        saved_path = store.save(capsule, push_remote=push_remote)
 
     print(f"\n[+] Capsule successfully generated: {capsule.capsule_id}")
     print(f"[+] Stored at: {saved_path}")
@@ -106,7 +109,8 @@ def handle_capsule_unpack(args):
 
 def handle_capsule_list(args):
     store = CapsuleStore(base_dir=Path(args.store) if args.store else None)
-    capsules = store.list_capsules()
+    include_remote = getattr(args, "remote", False)
+    capsules = store.list_capsules(include_remote=include_remote)
     if not capsules:
         print("No capsules found in store.")
         return
@@ -182,9 +186,103 @@ def handle_capsule_cloud_list(args):
 
 
 def handle_relay_server(args):
-    print(f"[+] Starting AHRP Relay Server on {args.host}:{args.port}...")
-    app = create_app()
+    storage_dir = Path(args.storage_dir) if getattr(args, "storage_dir", None) else None
+    print(f"[+] Starting AHRP Relay Server on {args.host}:{args.port} (Storage: {storage_dir or 'Default'})...")
+    app = create_app(storage_dir=storage_dir)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info", ws_max_size=32 * 1024 * 1024)
+
+
+def handle_storage_server(args):
+    from agent_comms.capsule.server import CapsuleStorageServer, create_storage_app
+    print(f"[+] Starting Unified Capsule Storage Server on {args.host}:{args.port}...")
+    storage_dir = Path(args.dir) if args.dir else None
+    server = CapsuleStorageServer(storage_dir=storage_dir)
+    app = create_storage_app(storage_server=server)
+    print(f"[+] Persistent storage directory: {server.storage_dir}")
+    print(f"[+] Indexed {len(server._index)} capsules on startup.")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+def handle_storage_status(args):
+    from agent_comms.capsule.cloud.relay import StorageServerProvider
+    provider = StorageServerProvider(storage_url=getattr(args, "server", None))
+    try:
+        url = f"{provider.base_url}/storage/status"
+        req = urllib.request.Request(url, headers={"User-Agent": "agent-comms/1.1"})
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            print(f"\n[+] Unified Storage Server: {provider.base_url}")
+            print(f" - Status:         {data.get('status')}")
+            print(f" - Directory:      {data.get('storage_dir')}")
+            print(f" - Total Capsules: {data.get('total_capsules')}")
+            print(f" - Free Disk:      {data.get('disk_free_mb')} MB")
+    except Exception as e:
+        print(f"[-] Could not connect to storage server at {provider.base_url}: {e}")
+        sys.exit(1)
+
+
+def handle_storage_list(args):
+    store = CapsuleStore(base_dir=Path(args.store) if getattr(args, "store", None) else None, storage_url=getattr(args, "server", None))
+    if getattr(args, "remote", False):
+        caps = store.list_storage_capsules(query=getattr(args, "query", None), task_id=getattr(args, "task", None))
+        print(f"\n[+] Capsules on Unified Storage Server ({store.storage_url}):\n")
+        print(f"{'CAPSULE ID':<26} {'TASK ID':<20} {'TIMESTAMP':<20} {'SUMMARY'}")
+        print("-" * 90)
+        for c in caps:
+            print(f"{c.capsule_id:<26} {c.task_id:<20} {c.created_at[:19]:<20} {(c.summary or '')[:25]}...")
+    else:
+        capsules = store.list_capsules(include_remote=True)
+        print(f"\n[+] Unified Fleet Capsules ({len(capsules)} total):\n")
+        print(f"{'CAPSULE ID':<26} {'TASK ID':<20} {'TIMESTAMP':<20} {'SUMMARY'}")
+        print("-" * 90)
+        for c in capsules:
+            print(f"{c.capsule_id:<26} {c.task_id:<20} {c.created_at[:19]:<20} {c.executive_summary[:25]}...")
+
+
+def handle_storage_push(args):
+    store = CapsuleStore(base_dir=Path(args.store) if getattr(args, "store", None) else None, storage_url=getattr(args, "server", None))
+    try:
+        loc = store.push_to_storage(args.capsule)
+        print(f"[+] Successfully pushed capsule '{args.capsule}' to unified storage server!")
+        print(f"[+] URI: {loc}")
+    except Exception as e:
+        print(f"[-] Push failed: {e}")
+        sys.exit(1)
+
+
+def handle_storage_pull(args):
+    store = CapsuleStore(base_dir=Path(args.store) if getattr(args, "store", None) else None, storage_url=getattr(args, "server", None))
+    unpacker = CapsuleUnpacker(workspace_path=Path(args.dir) if getattr(args, "dir", None) else None)
+    try:
+        capsule = store.pull_from_storage(args.capsule, save_local=True)
+        print(f"[+] Successfully pulled capsule '{capsule.capsule_id}' for task '{capsule.task_id}'!")
+        if getattr(args, "apply", False):
+            res = unpacker.apply(capsule, apply_workspace=True)
+            print(f"[+] Patch Status: {res['git_patch_message']}")
+        print("\n" + "=" * 60)
+        print("RESUMPTION BRIEFING:")
+        print("=" * 60)
+        print(capsule.to_briefing_markdown())
+        print("=" * 60)
+    except Exception as e:
+        print(f"[-] Pull failed: {e}")
+        sys.exit(1)
+
+
+def handle_storage_sync(args):
+    store = CapsuleStore(base_dir=Path(args.store) if getattr(args, "store", None) else None, storage_url=getattr(args, "server", None))
+    try:
+        direction = getattr(args, "direction", "both")
+        print(f"[+] Synchronizing capsules with {store.storage_url} (Direction: {direction})...")
+        res = store.sync(direction=direction)
+        print(f"[+] Sync finished: {len(res['pushed'])} pushed, {len(res['pulled'])} pulled.")
+        if res["pushed"]:
+            print(f" - Pushed: {', '.join(res['pushed'])}")
+        if res["pulled"]:
+            print(f" - Pulled: {', '.join(res['pulled'])}")
+    except Exception as e:
+        print(f"[-] Sync failed: {e}")
+        sys.exit(1)
 
 
 async def _run_relay_peers(relay_url: str):
@@ -1049,6 +1147,55 @@ def main():
     peers_p.add_argument("--timeout", type=float, default=1.5, help="Scan timeout in seconds")
     peers_p.set_defaults(func=handle_session_peers)
 
+
+    # --- Unified Storage Subcommand ---
+    storage_parser = subparsers.add_parser("storage", help="Unified Context Capsule storage server and fleet synchronization")
+    storage_subs = storage_parser.add_subparsers(dest="subcommand")
+
+    # server
+    st_srv = storage_subs.add_parser("server", help="Start standalone unified capsule storage server")
+    st_srv.add_argument("--host", default="0.0.0.0", help="Host address (default: 0.0.0.0)")
+    st_srv.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
+    st_srv.add_argument("--dir", help="Directory for capsule storage")
+    st_srv.set_defaults(func=handle_storage_server)
+
+    # status
+    st_stat = storage_subs.add_parser("status", help="Check unified storage server health and stats")
+    st_stat.add_argument("--server", help="Storage server URL")
+    st_stat.set_defaults(func=handle_storage_status)
+
+    # list
+    st_list = storage_subs.add_parser("list", help="List capsules from unified storage server")
+    st_list.add_argument("--server", help="Storage server URL")
+    st_list.add_argument("--remote", action="store_true", help="Query remote storage server only")
+    st_list.add_argument("--store", help="Custom local capsule store directory")
+    st_list.add_argument("-q", "--query", help="Filter query")
+    st_list.add_argument("--task", help="Filter by task ID")
+    st_list.set_defaults(func=handle_storage_list)
+
+    # push
+    st_push = storage_subs.add_parser("push", help="Push local capsule to unified storage server")
+    st_push.add_argument("capsule", help="Capsule ID or local JSON file")
+    st_push.add_argument("--server", help="Storage server URL")
+    st_push.add_argument("--store", help="Custom local capsule store directory")
+    st_push.set_defaults(func=handle_storage_push)
+
+    # pull
+    st_pull = storage_subs.add_parser("pull", help="Pull capsule from unified storage server")
+    st_pull.add_argument("capsule", help="Capsule ID or URI")
+    st_pull.add_argument("--server", help="Storage server URL")
+    st_pull.add_argument("--store", help="Custom local capsule store directory")
+    st_pull.add_argument("--apply", action="store_true", help="Apply git patch to workspace")
+    st_pull.add_argument("--dir", help="Target workspace directory")
+    st_pull.set_defaults(func=handle_storage_pull)
+
+    # sync
+    st_sync = storage_subs.add_parser("sync", help="Synchronize local capsules with unified storage server")
+    st_sync.add_argument("--server", help="Storage server URL")
+    st_sync.add_argument("--store", help="Custom local capsule store directory")
+    st_sync.add_argument("--direction", choices=["both", "push", "pull"], default="both", help="Sync direction")
+    st_sync.set_defaults(func=handle_storage_sync)
+
     # --- Relay Subcommands ---
     relay_parser = subparsers.add_parser("relay", help="In-Session Live Agent Mesh & Relay")
     relay_subs = relay_parser.add_subparsers(dest="subcommand")
@@ -1057,6 +1204,7 @@ def main():
     srv_p = relay_subs.add_parser("server", help="Start the live relay hub")
     srv_p.add_argument("--host", default="0.0.0.0", help="Host address (default: 0.0.0.0)")
     srv_p.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
+    srv_p.add_argument("--storage-dir", help="Persistent storage directory for capsules")
     srv_p.set_defaults(func=handle_relay_server)
 
     # peers

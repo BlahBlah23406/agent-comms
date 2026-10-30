@@ -1,8 +1,8 @@
 """
 Model Context Protocol (MCP) Server
 ===================================
-Exposes Context Capsule handoff, Cloud Storage synchronization, and Live Cross-Session
-activation as standardized MCP tools for AI assistants (Antigravity, Claude, Cursor, Windsurf).
+Exposes Context Capsule handoff, Unified Storage synchronization, and Live Cross-Session
+activation as standardized MCP tools for AI assistants (Antigravity, Claude, OpenClaw, Cursor, Windsurf).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class AgentCommsMCPServer:
         return [
             {
                 "name": "export_handoff_capsule",
-                "description": "Packages current task progress, epistemic learnings, git changes, and next steps into a transferable Context Capsule. Optionally pushes to cloud.",
+                "description": "Packages current task progress, epistemic learnings, git changes, and next steps into a transferable Context Capsule. Optionally persists to unified storage server or cloud.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -44,8 +44,9 @@ class AgentCommsMCPServer:
                         "goal": {"type": "string", "description": "Overall task goal"},
                         "executive_summary": {"type": "string", "description": "Summary of work done so far"},
                         "next_action": {"type": "string", "description": "Specific next instruction for successor agent"},
-                        "push_to_cloud": {"type": "boolean", "default": False, "description": "Whether to automatically upload capsule to cloud storage"},
-                        "cloud_provider": {"type": "string", "description": "Target cloud provider (s3, gcs, azure, github, relay)"},
+                        "push_to_storage": {"type": "boolean", "default": True, "description": "Whether to automatically upload capsule to unified storage server on code-47"},
+                        "push_to_cloud": {"type": "boolean", "default": False, "description": "Whether to upload capsule to external cloud storage (s3, gcs, azure, github)"},
+                        "cloud_provider": {"type": "string", "description": "Target cloud provider"},
                         "epistemic_learnings": {
                             "type": "array",
                             "items": {
@@ -55,6 +56,7 @@ class AgentCommsMCPServer:
                                     "summary": {"type": "string"},
                                     "details": {"type": "string"},
                                     "evidence": {"type": "string"},
+                                raid": {"type": "string"},
                                 },
                                 "required": ["category", "summary"],
                             },
@@ -66,37 +68,37 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "import_handoff_capsule",
-                "description": "Imports and applies a Context Capsule from local store or cloud, restoring workspace changes and briefing context.",
+                "description": "Imports and applies a Context Capsule from local store or unified storage server on code-47, restoring workspace changes and briefing context.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "capsule_or_task_id": {"type": "string", "description": "ID of the capsule, task, or cloud URI to import"},
+                        "capsule_or_task_id": {"type": "string", "description": "ID of the capsule, task, or URI to import"},
                         "apply_workspace": {"type": "boolean", "default": True, "description": "Whether to apply git diffs and untracked files"},
-                        "cloud_provider": {"type": "string", "description": "Optional explicit cloud provider to pull from if not found locally"},
+                        "cloud_provider": {"type": "string", "description": "Optional explicit provider to pull from"},
                     },
                     "required": ["capsule_or_task_id"],
                 },
             },
             {
                 "name": "push_handoff_capsule",
-                "description": "Pushes a Context Capsule to cloud storage (S3, GCS, Azure, GitHub, or Relay).",
+                "description": "Pushes a Context Capsule to unified storage server or cloud storage.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "capsule_id": {"type": "string", "description": "ID of the capsule or task to push"},
-                        "cloud_provider": {"type": "string", "description": "Target cloud provider (s3, gcs, azure, github, relay)"},
+                        "cloud_provider": {"type": "string", "description": "Target provider (storage, relay, s3, gcs, azure, github)"},
                     },
                     "required": ["capsule_id"],
                 },
             },
             {
                 "name": "pull_handoff_capsule",
-                "description": "Pulls a Context Capsule from cloud storage and optionally applies it directly to the workspace.",
+                "description": "Pulls a Context Capsule from unified storage server or cloud and optionally applies it directly to the workspace.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "capsule_id": {"type": "string", "description": "ID of the capsule or cloud URI"},
-                        "cloud_provider": {"type": "string", "description": "Source cloud provider (s3, gcs, azure, github, relay)"},
+                        "capsule_id": {"type": "string", "description": "ID of the capsule or URI"},
+                        "cloud_provider": {"type": "string", "description": "Source provider (storage, relay, s3, gcs, azure, github)"},
                         "apply_workspace": {"type": "boolean", "default": True, "description": "Whether to apply git diffs and restored files"},
                     },
                     "required": ["capsule_id"],
@@ -104,19 +106,31 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "list_saved_capsules",
-                "description": "Lists all available Context Capsules in the local store.",
+                "description": "Lists all available Context Capsules in the local store and fleet-wide unified storage server on code-47.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "include_remote": {"type": "boolean", "default": True, "description": "Whether to include remote capsules from unified storage server"},
+                    },
+                },
+            },
+            {
+                "name": "sync_capsules",
+                "description": "Synchronizes Context Capsules between local machine and the unified storage server on code-47.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "direction": {"type": "string", "enum": ["both", "push", "pull"], "default": "both", "description": "Sync direction"},
+                    },
                 },
             },
             {
                 "name": "list_cloud_capsules",
-                "description": "Lists Context Capsules stored on the cloud provider.",
+                "description": "Lists Context Capsules stored on the cloud/storage provider.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "cloud_provider": {"type": "string", "description": "Cloud provider (s3, gcs, azure, github, relay)"},
+                        "cloud_provider": {"type": "string", "description": "Cloud provider (storage, relay, s3, gcs, azure, github)"},
                     },
                 },
             },
@@ -128,13 +142,13 @@ class AgentCommsMCPServer:
                     "properties": {
                         "target_machine": {"type": "string", "description": "Alias of the remote machine to wake (or omit to wake all available)"},
                         "task_id": {"type": "string", "description": "Optional task identifier to auto-package and transmit to the remote machine"},
-                        "room_id": {"type": "string", "description": "Optional custom room/session identifier"},
+                        "room_id": {"type": "string", "description": "Optional room name or topic"},
                     },
                 },
             },
             {
                 "name": "scan_network_peers",
-                "description": "Scans the local network for standby agent machines available for instant cross-session collaboration.",
+                "description": "Scans local network for available standby worker nodes awaiting activation.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -142,41 +156,41 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "check_quota_status",
-                "description": "Inspects quota utilization and rate limit health for an AI provider (anthropic, openai, gemini, cursor, custom).",
+                "description": "Queries the remaining request and token quota for an AI provider (e.g. 'claude', 'gemini').",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "provider": {"type": "string", "description": "AI provider name e.g. anthropic, openai, gemini, cursor"},
+                        "provider": {"type": "string", "description": "AI provider name (claude, gemini, openai)"},
                     },
                     "required": ["provider"],
                 },
             },
             {
                 "name": "record_usage_and_guard",
-                "description": "Records API tokens/requests used, parses response headers, and warns if rate limit is imminent.",
+                "description": "Records token and request consumption, inspects rate limit headers, and checks if evacuation is warranted.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "provider": {"type": "string", "description": "AI provider name"},
-                        "tokens_used": {"type": "integer", "default": 0},
-                        "requests_used": {"type": "integer", "default": 1},
-                        "headers": {"type": "object", "description": "Optional HTTP response headers from AI provider"},
+                        "tokens_used": {"type": "integer", "default": 0, "description": "Estimated tokens consumed in turn"},
+                        "requests_used": {"type": "integer", "default": 1, "description": "Requests consumed"},
+                        "headers": {"type": "object", "description": "HTTP response headers for ratelimit parsing"},
                     },
                     "required": ["provider"],
                 },
             },
             {
                 "name": "preemptive_quota_evacuate",
-                "description": "Preemptively freezes session before hitting an AI provider rate limit, saves git diffs & task progress to a Context Capsule, and optionally pushes to cloud for another agent/provider to resume.",
+                "description": "Emergency command: packages current state into a capsule and halts execution when quota is nearly exhausted.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "task_id": {"type": "string", "description": "Task identifier to freeze and handoff"},
-                        "provider": {"type": "string", "description": "Current AI provider being exhausted"},
-                        "summary": {"type": "string", "description": "Summary of completed work before rate-limit shutdown"},
-                        "next_action": {"type": "string", "description": "Immediate instructions for the successor agent"},
-                        "target_provider": {"type": "string", "description": "Recommended alternative provider or account (e.g. gemini, openai, secondary-account)"},
-                        "push_to_cloud": {"type": "boolean", "default": True, "description": "Upload capsule to cloud for another machine/agent to pick up"},
+                        "task_id": {"type": "string", "description": "Active task identifier"},
+                        "provider": {"type": "string", "description": "Exhausted provider name"},
+                        "summary": {"type": "string", "description": "Reason for evacuation and work done so far"},
+                        "next_action": {"type": "string", "description": "Next step for successor agent"},
+                        "target_provider": {"type": "string", "description": "Recommended successor provider (e.g. gemini)"},
+                        "push_to_cloud": {"type": "boolean", "default": True, "description": "Whether to auto-upload handoff capsule"},
                     },
                     "required": ["task_id", "provider"],
                 },
@@ -205,6 +219,13 @@ class AgentCommsMCPServer:
                 epistemic_learnings=learnings,
             )
             saved_path = self.store.save(capsule)
+            storage_loc = None
+            if arguments.get("push_to_storage", True) and self.store.storage_url:
+                try:
+                    storage_loc = self.store.push_to_storage(capsule)
+                except Exception as ex:
+                    storage_loc = f"Storage sync warning: {ex}"
+
             cloud_loc = None
             if arguments.get("push_to_cloud"):
                 try:
@@ -220,20 +241,22 @@ class AgentCommsMCPServer:
                 "saved_path": str(saved_path),
                 "briefing": capsule.to_briefing_markdown(),
             }
+            if storage_loc:
+                res["storage_location"] = storage_loc
             if cloud_loc:
                 res["cloud_location"] = cloud_loc
             return json.dumps(res, indent=2)
 
         elif name == "import_handoff_capsule":
             target_id = arguments["capsule_or_task_id"]
-            capsule = self.store.load_by_id(target_id)
+            capsule = self.store.load_by_id(target_id, fetch_remote=True)
             if not capsule:
                 p = Path(target_id)
                 if p.exists() and p.is_file():
                     capsule = self.store.load_from_file(p)
 
-            # Fallback to cloud if not found locally
-            if not capsule:
+            # Fallback to explicit cloud provider if specified
+            if not capsule and arguments.get("cloud_provider"):
                 try:
                     capsule = self.store.pull_from_cloud(
                         target_id, provider_name=arguments.get("cloud_provider")
@@ -242,7 +265,7 @@ class AgentCommsMCPServer:
                     pass
 
             if not capsule:
-                return json.dumps({"error": f"Capsule '{target_id}' not found locally or on cloud."}, indent=2)
+                return json.dumps({"error": f"Capsule '{target_id}' not found locally or in unified storage."}, indent=2)
 
             apply_ws = arguments.get("apply_workspace", True)
             res = self.unpacker.apply(capsule, apply_workspace=apply_ws)
@@ -255,20 +278,25 @@ class AgentCommsMCPServer:
 
         elif name == "push_handoff_capsule":
             cid = arguments["capsule_id"]
+            provider = arguments.get("cloud_provider")
             try:
-                location = self.store.push_to_cloud(
-                    cid, provider_name=arguments.get("cloud_provider")
-                )
+                if not provider or provider in ("storage", "server"):
+                    location = self.store.push_to_storage(cid)
+                else:
+                    location = self.store.push_to_cloud(cid, provider_name=provider)
                 return json.dumps({"status": "success", "capsule_id": cid, "location": location}, indent=2)
             except Exception as e:
                 return json.dumps({"error": f"Push failed: {e}"}, indent=2)
 
         elif name == "pull_handoff_capsule":
             cid = arguments["capsule_id"]
+            provider = arguments.get("cloud_provider")
             try:
-                capsule = self.store.pull_from_cloud(
-                    cid, provider_name=arguments.get("cloud_provider"), save_local=True
-                )
+                if not provider or provider in ("storage", "server"):
+                    capsule = self.store.pull_from_storage(cid, save_local=True)
+                else:
+                    capsule = self.store.pull_from_cloud(cid, provider_name=provider, save_local=True)
+
                 res = {"status": "success", "capsule_id": capsule.capsule_id, "task_id": capsule.task_id}
                 if arguments.get("apply_workspace", True):
                     unpacked = self.unpacker.apply(capsule, apply_workspace=True)
@@ -278,7 +306,8 @@ class AgentCommsMCPServer:
                 return json.dumps({"error": f"Pull failed: {e}"}, indent=2)
 
         elif name == "list_saved_capsules":
-            caps = self.store.list_capsules()
+            include_remote = arguments.get("include_remote", True)
+            caps = self.store.list_capsules(include_remote=include_remote)
             return json.dumps([
                 {
                     "capsule_id": c.capsule_id,
@@ -291,12 +320,24 @@ class AgentCommsMCPServer:
                 for c in caps
             ], indent=2)
 
+        elif name == "sync_capsules":
+            direction = arguments.get("direction", "both")
+            try:
+                result = self.store.sync(direction=direction)
+                return json.dumps({"status": "success", "result": result}, indent=2)
+            except Exception as e:
+                return json.dumps({"error": f"Sync failed: {e}"}, indent=2)
+
         elif name == "list_cloud_capsules":
             try:
-                caps = self.store.list_cloud_capsules(provider_name=arguments.get("cloud_provider"))
+                provider = arguments.get("cloud_provider")
+                if not provider or provider in ("storage", "server"):
+                    caps = self.store.list_storage_capsules()
+                else:
+                    caps = self.store.list_cloud_capsules(provider_name=provider)
                 return json.dumps([c.model_dump() for c in caps], indent=2)
             except Exception as e:
-                return json.dumps({"error": f"Error querying cloud: {e}"}, indent=2)
+                return json.dumps({"error": f"Error querying remote storage: {e}"}, indent=2)
 
         elif name == "start_cross_session":
             target = arguments.get("target_machine")
@@ -369,12 +410,21 @@ class AgentCommsMCPServer:
 
     async def run_stdio(self):
         """Standard IO JSON-RPC 2.0 MCP loop."""
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_running_loop().connect_read_pipe(lambda: protocol, sys.stdin)
+        loop = asyncio.get_running_loop()
+        if sys.platform == "win32":
+            # The Proactor loop cannot register the anonymous stdin pipe an MCP
+            # client hands us (WinError 6), so connect_read_pipe hangs forever.
+            # Read lines on a worker thread instead.
+            async def readline():
+                return await loop.run_in_executor(None, sys.stdin.buffer.readline)
+        else:
+            reader = asyncio.StreamReader()
+            protocol = asyncio.StreamReaderProtocol(reader)
+            await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+            readline = reader.readline
 
         while True:
-            line = await reader.readline()
+            line = await readline()
             if not line:
                 break
             line_str = line.decode("utf-8").strip()

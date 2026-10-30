@@ -1,8 +1,9 @@
 """
 Agent Comms Configuration Manager
 =================================
-Manages local configuration, cloud provider credentials, and machine identity.
-Persists settings to ~/.agent-comms/config.json with environment variable overrides.
+Manages local configuration, cloud provider credentials, unified storage servers,
+and machine identity. Persists settings to ~/.agent-comms/config.json with
+environment variable overrides.
 """
 
 from __future__ import annotations
@@ -19,7 +20,9 @@ class ConfigManager:
 
     DEFAULT_CONFIG: Dict[str, Any] = {
         "machine_alias": socket.gethostname(),
-        "default_cloud_provider": "relay",
+        "default_cloud_provider": "storage",
+        "storage_server_url": "",
+        "auto_sync_storage": False,
         "discovery_port": 8764,
         "default_relay_url": "ws://localhost:8765/ws",
         "s3": {
@@ -112,10 +115,12 @@ class ConfigManager:
         """Returns full configuration dict."""
         return self._data
 
-    def _get_from_env(self, key_path: str) -> Optional[str]:
+    def _get_from_env(self, key_path: str) -> Optional[Any]:
         """Maps dot-notated keys to common environment variable names."""
         env_map = {
             "default_cloud_provider": "AGENT_COMMS_CLOUD_PROVIDER",
+            "storage_server_url": "AGENT_COMMS_STORAGE_URL",
+            "auto_sync_storage": "AGENT_COMMS_AUTO_SYNC",
             "machine_alias": "AGENT_COMMS_MACHINE_ALIAS",
             "discovery_port": "AGENT_COMMS_DISCOVERY_PORT",
             "default_relay_url": "AGENT_COMMS_RELAY_URL",
@@ -133,25 +138,31 @@ class ConfigManager:
             "github.gist_id": "GITHUB_GIST_ID",
         }
         env_var = env_map.get(key_path)
-        if env_var and os.environ.get(env_var):
-            return os.environ[env_var]
+        if env_var and os.environ.get(env_var) is not None:
+            val = os.environ[env_var]
+            if key_path == "auto_sync_storage":
+                return val.lower() in ("1", "true", "yes")
+            return val
         return None
 
     def resolve_cloud_provider(self, requested: Optional[str] = None) -> str:
         """
-        Determines active cloud provider based on:
-        1. Explicit request
-        2. Config / Environment default
-        3. Automatic detection from environment variables
+        Determines active cloud/unified storage provider.
         """
         if requested:
-            return requested.lower().strip()
+            req = requested.lower().strip()
+            if req in ("server", "unified"):
+                return "storage"
+            return req
 
         configured = self.get("default_cloud_provider")
+        if configured and configured in ("storage", "server", "unified"):
+            return "storage"
+
         if configured and configured != "relay":
             return configured
 
-        # Auto-detection
+        # Auto-detection for major clouds
         if os.environ.get("AWS_S3_BUCKET") or (os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY")):
             return "s3"
         if os.environ.get("GCS_BUCKET") or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
@@ -161,7 +172,11 @@ class ConfigManager:
         if os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"):
             return "github"
 
-        return configured or "relay"
+        # If storage_server_url is configured, use storage
+        if self.get("storage_server_url") or os.environ.get("AGENT_COMMS_STORAGE_URL"):
+            return "storage"
+
+        return configured or "storage"
 
 
 # Global singleton instance
