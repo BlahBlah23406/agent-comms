@@ -56,7 +56,6 @@ class AgentCommsMCPServer:
                                     "summary": {"type": "string"},
                                     "details": {"type": "string"},
                                     "evidence": {"type": "string"},
-                                raid": {"type": "string"},
                                 },
                                 "required": ["category", "summary"],
                             },
