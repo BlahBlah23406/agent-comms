@@ -71,6 +71,7 @@ class CapsuleStorageServer:
                     "created_at": created_at,
                     "agent_name": gen.get("agent_name", "unknown"),
                     "machine_id": gen.get("machine_id", "unknown"),
+                    "target_agent": data.get("target_agent"),
                     "file_name": json_path.name,
                     "size_bytes": stat.st_size,
                     "mtime": stat.st_mtime,
@@ -96,6 +97,7 @@ class CapsuleStorageServer:
             "created_at": capsule.created_at,
             "agent_name": capsule.generator.agent_name,
             "machine_id": capsule.generator.machine_id,
+            "target_agent": capsule.target_agent,
             "size_bytes": len(capsule.model_dump_json().encode("utf-8")),
             "mtime": 0.0,
         }
@@ -191,6 +193,7 @@ class CapsuleStorageServer:
         self,
         query: Optional[str] = None,
         task_id: Optional[str] = None,
+        target_agent: Optional[str] = None,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """Returns indexed capsule records matching criteria, newest first."""
@@ -198,6 +201,9 @@ class CapsuleStorageServer:
 
         if task_id:
             records = [r for r in records if r.get("task_id") == task_id]
+
+        if target_agent:
+            records = [r for r in records if (r.get("target_agent") or "").lower() == target_agent.lower()]
 
         if query:
             q = query.lower()
@@ -291,9 +297,10 @@ def create_storage_app(
     async def list_capsules(
         q: Optional[str] = Query(None, description="Search term across title, summary, or IDs"),
         task_id: Optional[str] = Query(None, description="Filter by task ID"),
+        target_agent: Optional[str] = Query(None, description="Filter by target agent name"),
         limit: int = Query(100, ge=1, le=500),
     ):
-        return app.state.storage.list_capsules(query=q, task_id=task_id, limit=limit)
+        return app.state.storage.list_capsules(query=q, task_id=task_id, target_agent=target_agent, limit=limit)
 
     @app.post("/capsules")
     async def upload_capsule(capsule: Dict[str, Any]):
