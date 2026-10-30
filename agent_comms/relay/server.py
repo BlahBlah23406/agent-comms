@@ -138,9 +138,10 @@ def create_app(
     async def list_capsules(
         q: Optional[str] = Query(None, description="Search filter across capsules"),
         task_id: Optional[str] = Query(None, description="Filter by task_id"),
+        target_agent: Optional[str] = Query(None, description="Filter by target agent name"),
         limit: int = Query(100, ge=1, le=500),
     ):
-        return hub.storage.list_capsules(query=q, task_id=task_id, limit=limit)
+        return hub.storage.list_capsules(query=q, task_id=task_id, target_agent=target_agent, limit=limit)
 
     @app.post("/capsules")
     async def upload_capsule(capsule: Dict[str, Any]):
