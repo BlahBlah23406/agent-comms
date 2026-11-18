@@ -228,7 +228,7 @@ class AgentCommsMCPServer:
                     "type": "object",
                     "properties": {
                         "tasks": {"type": "array", "items": {"type": "string"}, "description": "One complete, self-contained instruction per helper. Give each helper different files."},
-                        "agent": {"type": "string", "description": "Optional: force one agent, e.g. codex or claude@code-47"},
+                        "agent": {"type": "string", "description": "Optional: force one agent, e.g. codex or claude@my-server"},
                         "folder": {"type": "string", "description": "Project folder the helpers work in (needed from chat apps)"},
                     },
                     "required": ["tasks"],

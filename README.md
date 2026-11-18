@@ -95,7 +95,7 @@ agent-comms config set ollama_model <model>
 
 **SSH machines:** You can add other computers that you can reach over SSH:
 ```bash
-agent-comms fleet add-host code-47 --ssh me@100.118.132.56 --dir ~/myproject --agents claude,codex
+agent-comms fleet add-host my-server --ssh me@192.168.1.20 --dir ~/myproject --agents claude,codex
 ```
 Add `--powershell` if the remote machine runs Windows. The folder on that machine (`--dir`) must already have the project. Remove a host with `agent-comms fleet remove-host <name>`.
 
