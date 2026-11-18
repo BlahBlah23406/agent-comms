@@ -1049,8 +1049,23 @@ def handle_jobs(args):
         _print_job(job)
 
 
+def handle_busy(args):
+    from agent_comms.fleet import capacity
+    from agent_comms.fleet.runner import BUSY_EXIT
+    state = capacity.check()
+    if args.gate:
+        if state["busy"]:
+            print(f"BUSY: {state['reason']}")
+            sys.exit(BUSY_EXIT)
+        return
+    print(f"CPU: {state['cpu_percent']}%  Free memory: {state['free_memory_mb']} MB  Agent CLIs running: {state['running_agents']}")
+    print(f"Busy: {state['reason']}" if state["busy"] else "Ready to take helper work.")
+
+
 def handle_agents(args):
-    from agent_comms.fleet import runner
+    from agent_comms.fleet import capacity, runner
+    state = capacity.check()
+    print(f"This machine: {'busy, ' + state['reason'] if state['busy'] else 'ready'}\n")
     rows = runner.status()
     if not rows:
         print("No agent CLIs found. Install one of: claude, codex, gemini, agy.")
@@ -1354,6 +1369,10 @@ def main():
 
     agents_p = subparsers.add_parser("agents", help="Show which agent CLIs are ready and how much each was used")
     agents_p.set_defaults(func=handle_agents)
+
+    busy_p = subparsers.add_parser("busy", help="Show if this machine is too busy to take helper work")
+    busy_p.add_argument("--gate", action="store_true", help=argparse.SUPPRESS)
+    busy_p.set_defaults(func=handle_busy)
 
     instr_p = subparsers.add_parser("instructions", help="Print the text to paste into chat apps (Claude, Gemini, ChatGPT)")
     instr_p.set_defaults(func=handle_instructions)

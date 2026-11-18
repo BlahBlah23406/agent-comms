@@ -1,5 +1,6 @@
 import json
 import shutil
+import sys
 import tempfile
 import time
 import unittest
@@ -8,7 +9,7 @@ from unittest.mock import patch
 
 from agent_comms.capsule.store import CapsuleStore
 from agent_comms.config import config_manager
-from agent_comms.fleet import runner
+from agent_comms.fleet import capacity, runner
 from agent_comms.fleet.autosave import autosave, read_transcript
 
 
@@ -133,7 +134,7 @@ class TestFleet(unittest.TestCase):
 
         with patch.object(config_manager, "config_dir", cfg_dir), patch.object(
             runner, "available_slots", return_value=["claude", "codex", "gemini"]
-        ):
+        ), patch.object(capacity, "check", return_value={"busy": False, "reason": None}):
             runner.save_usage({
                 "runs": {
                     "claude": [now - 10, now - 5],
@@ -161,19 +162,112 @@ class TestFleet(unittest.TestCase):
 
         with patch.object(config_manager, "get", side_effect=fake_get):
             ps_cmd = runner.build_command("claude@winbox", "fix it's bug", "/tmp")
-            self.assertEqual(ps_cmd[:6], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR"])
-            self.assertEqual(ps_cmd[6], "user@win")
-            self.assertEqual(
-                ps_cmd[7],
-                "cd 'C:\\work\\it''s_here' -ErrorAction SilentlyContinue; & 'claude' '-p' '--permission-mode' 'acceptEdits' 'fix it''s bug'",
-            )
+            self.assertEqual(ps_cmd[:7], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", "user@win"])
+            self.assertIn("agent-comms busy --gate", ps_cmd[7])
+            self.assertIn("exit 75", ps_cmd[7])
+            self.assertIn("cd 'C:\\work\\it''s_here' -ErrorAction SilentlyContinue", ps_cmd[7])
+            self.assertIn("& 'claude' '-p' '--permission-mode' 'acceptEdits' 'fix it''s bug'", ps_cmd[7])
 
             sh_cmd = runner.build_command("claude@linuxbox", "fix bug", "/tmp")
             self.assertEqual(sh_cmd[:7], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", "user@linux"])
-            self.assertEqual(
-                sh_cmd[7],
-                "cd ~/proj 2>/dev/null; claude -p --permission-mode acceptEdits 'fix bug'",
-            )
+            self.assertIn('exec "${SHELL:-sh}" -lc ', sh_cmd[7])
+            self.assertIn("export PATH=", sh_cmd[7])
+            self.assertIn("agent-comms busy --gate", sh_cmd[7])
+            self.assertIn("exit 75", sh_cmd[7])
+            self.assertIn("cd ~/proj 2>/dev/null; claude -p --permission-mode acceptEdits", sh_cmd[7])
+            self.assertIn("fix bug", sh_cmd[7])
+
+    def test_capacity_check(self):
+        with patch.object(capacity, "cpu_percent", return_value=20.0), patch.object(
+            capacity, "free_memory_mb", return_value=4096.0
+        ), patch.object(capacity, "running_agents", return_value=2), patch.object(
+            config_manager, "get", return_value=None
+        ):
+            res = capacity.check()
+            self.assertFalse(res["busy"])
+            self.assertIsNone(res["reason"])
+
+        with patch.object(capacity, "cpu_percent", return_value=90.0), patch.object(
+            capacity, "free_memory_mb", return_value=4096.0
+        ), patch.object(capacity, "running_agents", return_value=2), patch.object(
+            config_manager, "get", return_value=None
+        ):
+            res = capacity.check()
+            self.assertTrue(res["busy"])
+            self.assertIn("CPU", res["reason"])
+
+        with patch.object(capacity, "cpu_percent", return_value=20.0), patch.object(
+            capacity, "free_memory_mb", return_value=512.0
+        ), patch.object(capacity, "running_agents", return_value=2), patch.object(
+            config_manager, "get", return_value=None
+        ):
+            res = capacity.check()
+            self.assertTrue(res["busy"])
+            self.assertIn("free memory", res["reason"])
+
+        with patch.object(capacity, "cpu_percent", return_value=20.0), patch.object(
+            capacity, "free_memory_mb", return_value=4096.0
+        ), patch.object(capacity, "running_agents", return_value=6), patch.object(
+            config_manager, "get", return_value=None
+        ):
+            res = capacity.check()
+            self.assertTrue(res["busy"])
+            self.assertIn("agent CLIs", res["reason"])
+
+        with patch.object(capacity, "cpu_percent", return_value=20.0), patch.object(
+            capacity, "free_memory_mb", return_value=4096.0
+        ), patch.object(capacity, "running_agents", return_value=2), patch.object(
+            config_manager, "get", side_effect=lambda k, default=None: False if k == "accept_work" else default
+        ):
+            res = capacity.check()
+            self.assertTrue(res["busy"])
+            self.assertIn("switched off", res["reason"])
+
+    def test_runner_pick_skips_local_when_busy(self):
+        cfg_dir = self.temp_dir / "config"
+        cfg_dir.mkdir(exist_ok=True)
+        with patch.object(config_manager, "config_dir", cfg_dir), patch.object(
+            runner, "available_slots", return_value=["claude", "codex", "agy@box"]
+        ), patch.object(
+            capacity, "check", return_value={"busy": True, "reason": "CPU at 95% (cap 85%)"}
+        ):
+            runner.save_usage({"runs": {}, "cooldown": {}})
+            self.assertEqual(runner.pick(), "agy@box")
+
+    def test_runner_work_moves_to_next_slot_on_exit_75(self):
+        cfg_dir = self.temp_dir / "config"
+        cfg_dir.mkdir(exist_ok=True)
+        cwd = self.temp_dir / "work"
+        cwd.mkdir(exist_ok=True)
+
+        def fake_build_command(slot, prompt, job_cwd):
+            if slot == "claude@box1":
+                return [sys.executable, "-c", 'import sys; print("BUSY: test"); sys.exit(75)']
+            return [sys.executable, "-c", 'print("ok")']
+
+        with patch.object(config_manager, "config_dir", cfg_dir), patch.object(
+            runner, "available_slots", return_value=["claude@box1", "codex@box2"]
+        ), patch.object(
+            runner, "pick", return_value="codex@box2"
+        ), patch.object(
+            runner, "build_command", side_effect=fake_build_command
+        ):
+            job = {
+                "id": "job75",
+                "prompt": "test prompt",
+                "agent": "claude@box1",
+                "cwd": str(cwd),
+                "status": "queued",
+                "tried": [],
+                "created": time.time(),
+                "fixed_agent": False,
+            }
+            runner.write_job(job)
+            runner.work("job75")
+            final_job = runner.read_job("job75")
+            self.assertEqual(final_job["status"], "done")
+            self.assertEqual(final_job["exit_code"], 0)
+            self.assertEqual(final_job["tried"], ["claude@box1", "codex@box2"])
 
 
 if __name__ == "__main__":

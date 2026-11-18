@@ -12,12 +12,14 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent_comms.config import config_manager
+from agent_comms.fleet import capacity
 from agent_comms.fleet.autosave import hit_limit
 
 COMMANDS = {
@@ -45,6 +47,9 @@ COMMANDS = {
 DEFAULT_AGENTS = ["claude", "codex", "agy"]
 WINDOW_SECONDS = 5 * 3600
 COOLDOWN_SECONDS = 3600
+BUSY_SECONDS = 600
+BUSY_EXIT = 75
+PATH_DIRS = "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
 MAX_OUTPUT = 20000
 
 WORKER_PREFIX = (
@@ -83,9 +88,9 @@ def _record_run(slot: str):
     save_usage(usage)
 
 
-def _cool_down(slot: str):
+def _cool_down(slot: str, seconds: int = COOLDOWN_SECONDS):
     usage = load_usage()
-    usage["cooldown"][slot] = time.time() + COOLDOWN_SECONDS
+    usage["cooldown"][slot] = time.time() + seconds
     save_usage(usage)
 
 
@@ -115,6 +120,8 @@ def status() -> List[Dict[str, Any]]:
 
 def pick(exclude: Optional[List[str]] = None) -> Optional[str]:
     rows = [r for r in status() if not r["resting_until"] and r["agent"] not in (exclude or [])]
+    if any("@" not in r["agent"] for r in rows) and capacity.check()["busy"]:
+        rows = [r for r in rows if "@" in r["agent"]]
     if not rows:
         return None
     return min(rows, key=lambda r: r["runs_last_5h"])["agent"]
@@ -149,9 +156,16 @@ def build_command(slot: str, prompt: str, cwd: str) -> List[str]:
     host = _host(host_name)
     folder = host.get("dir") or _same_folder(cwd)
     if host.get("shell") == "powershell":
-        remote = f"cd {_quote_ps(folder)} -ErrorAction SilentlyContinue; & " + " ".join(_quote_ps(c) for c in cmd)
+        remote = (
+            f"agent-comms busy --gate; if ($LASTEXITCODE -eq {BUSY_EXIT}) {{ exit {BUSY_EXIT} }}; "
+            f"cd {_quote_ps(folder)} -ErrorAction SilentlyContinue; & " + " ".join(_quote_ps(c) for c in cmd)
+        )
     else:
-        remote = f"cd {folder} 2>/dev/null; {shlex.join(cmd)}"
+        script = (
+            f'export PATH="$PATH:{PATH_DIRS}"; agent-comms busy --gate; [ $? -eq {BUSY_EXIT} ] && exit {BUSY_EXIT}; '
+            f"cd {folder} 2>/dev/null; {shlex.join(cmd)}"
+        )
+        remote = f'exec "${{SHELL:-sh}}" -lc {shlex.quote(script)}'
     return ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", host["ssh"], remote]
 
 
@@ -214,15 +228,17 @@ def work(job_id: str):
         job["tried"].append(slot)
         write_job(job)
         try:
-            res = subprocess.run(
-                build_command(slot, prompt, job["cwd"]),
-                cwd=job["cwd"],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                stdin=subprocess.DEVNULL,
-            )
-            output, code = (res.stdout + res.stderr).strip(), res.returncode
+            with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out:
+                code = subprocess.run(
+                    build_command(slot, prompt, job["cwd"]),
+                    cwd=job["cwd"],
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    timeout=timeout,
+                    stdin=subprocess.DEVNULL,
+                ).returncode
+                out.seek(0)
+                output = out.read().strip()
         except subprocess.TimeoutExpired:
             output, code = f"Stopped after {timeout} seconds.", -1
         except Exception as e:
@@ -232,7 +248,7 @@ def work(job_id: str):
         broken = hit_limit(output[-2000:]) or code not in (0, -1)
         if not broken or job["fixed_agent"]:
             break
-        _cool_down(slot)
+        _cool_down(slot, BUSY_SECONDS if code == BUSY_EXIT else COOLDOWN_SECONDS)
         slot = pick(exclude=job["tried"])
         if slot:
             _record_run(slot)

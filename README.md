@@ -99,6 +99,18 @@ agent-comms fleet add-host my-server --ssh me@192.168.1.20 --dir ~/myproject --a
 ```
 Add `--powershell` if the remote machine runs Windows. The folder on that machine (`--dir`) must already have the project. Remove a host with `agent-comms fleet remove-host <name>`.
 
+**Busy machines say no:** before a machine takes a helper job, it checks itself. If it is too busy, the job goes to another agent and that machine is skipped for 10 minutes. See how a machine is doing with:
+```bash
+agent-comms busy
+```
+Change the limits on each machine (these are the defaults):
+```bash
+agent-comms config set cap_cpu_percent 85      # too busy above this CPU use
+agent-comms config set cap_min_free_mb 1024    # too busy below this much free memory
+agent-comms config set cap_running_agents 6    # too busy when this many agent CLIs are running (yours count too)
+agent-comms config set accept_work false       # never take helper jobs (set to true to turn back on)
+```
+
 Note: Kaggle and other remote GPU services are not supported yet.
 
 ---
