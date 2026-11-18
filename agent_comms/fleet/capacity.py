@@ -34,7 +34,10 @@ def cpu_percent() -> Optional[float]:
     if hasattr(os, "getloadavg"):
         return os.getloadavg()[0] / (os.cpu_count() or 1) * 100
     try:
-        return float(_powershell("(Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average"))
+        return float(_powershell(
+            "((Get-Counter '\\Processor(_Total)\\% Processor Time' -SampleInterval 1 -MaxSamples 3)"
+            ".CounterSamples.CookedValue | Measure-Object -Average).Average"
+        ))
     except (ValueError, OSError, subprocess.SubprocessError):
         return None
 
