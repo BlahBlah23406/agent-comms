@@ -153,7 +153,7 @@ def build_command(slot: str, prompt: str, cwd: str) -> List[str]:
         remote = f"cd {_quote_ps(folder)}; & " + " ".join(_quote_ps(c) for c in cmd)
     else:
         remote = f"cd {folder} && {shlex.join(cmd)}"
-    return ["ssh", "-o", "BatchMode=yes", host["ssh"], remote]
+    return ["ssh", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", host["ssh"], remote]
 
 
 def submit(prompts: List[str], cwd: Optional[str] = None, agent: Optional[str] = None) -> List[Dict[str, Any]]:
