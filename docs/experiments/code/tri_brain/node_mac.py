@@ -1,5 +1,5 @@
 """
-Tri-Brain Node: macOS (The-Triskelion)
+Tri-Brain Node: macOS (MacBook)
 ======================================
 Operates as Node 2 in the 3-Way Cross-Platform Mesh.
 """
@@ -17,12 +17,12 @@ RELAY_URL = "ws://<relay-host>:8765/ws"
 
 
 async def run_mac_node():
-    print("[Mac Node] Booting Tri-Brain node on The-Triskelion (macOS Apple Silicon)...", flush=True)
+    print("[Mac Node] Booting Tri-Brain node on MacBook (macOS Apple Silicon)...", flush=True)
 
     node = DualBrainNode(
         agent_id="tri-node-mac",
         relay_url=RELAY_URL,
-        machine_id="The-Triskelion",
+        machine_id="MacBook",
         role="frontal-cortex-apple-silicon",
         capabilities=["apple_silicon_metal", "arm64_neural", "macos_workstation"],
     )
@@ -44,7 +44,7 @@ async def run_mac_node():
     node.on_belief_update(on_belief)
 
     await node.start()
-    print("[Mac Node] Connected to AHRP Relay Hub on code-47.", flush=True)
+    print("[Mac Node] Connected to AHRP Relay Hub on cloud-server.", flush=True)
 
     # 1. Assert Mac Belief into shared mind
     uname = platform.uname()

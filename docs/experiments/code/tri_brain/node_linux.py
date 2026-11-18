@@ -1,5 +1,5 @@
 """
-Tri-Brain Node: Linux Cloud (code-47)
+Tri-Brain Node: Linux Cloud (cloud-server)
 =====================================
 Operates as Node 3 in the 3-Way Cross-Platform Mesh.
 """
@@ -14,7 +14,7 @@ import sys
 from agent_comms.mesh import DualBrainNode
 from agent_comms.models.capsule import EpistemicLearning, LearningCategory
 
-RELAY_URL = "ws://127.0.0.1:8765/ws"  # Local to code-47
+RELAY_URL = "ws://127.0.0.1:8765/ws"  # Local to cloud-server
 
 
 def get_linux_loadavg():
@@ -26,12 +26,12 @@ def get_linux_loadavg():
 
 
 async def run_linux_node():
-    print("[Linux Node] Booting Tri-Brain node on code-47 (Oracle Cloud Ubuntu Linux)...", flush=True)
+    print("[Linux Node] Booting Tri-Brain node on cloud-server (Oracle Cloud Ubuntu Linux)...", flush=True)
 
     node = DualBrainNode(
         agent_id="tri-node-linux",
         relay_url=RELAY_URL,
-        machine_id="code-47",
+        machine_id="cloud-server",
         role="cloud-backend-telemetry",
         capabilities=["linux_kernel_telemetry", "oci_cloud", "merkle_engine"],
     )
@@ -74,7 +74,7 @@ async def run_linux_node():
         "TRI_BRAIN_CONSENSUS_V1",
         {
             "topology": "tri_mesh",
-            "nodes": ["Providence_Win11", "Triskelion_macOS", "Code47_Ubuntu"],
+            "nodes": ["WindowsPC_Win11", "MacBook_macOS", "CloudServer_Ubuntu"],
             "verification": "merkle_sha256",
             "status": "LOCKED_BY_CONSENSUS",
         },

@@ -6,11 +6,11 @@ Following the success of the two-node Dual-Brain model, we executed a **Three-Wa
 
 | Node | Hostname | OS / Hardware | Network Location | Role in Tri-Brain |
 | :--- | :--- | :--- | :--- | :--- |
-| **Node 1** | `Providence` | Windows 11 Pro (x86_64) | Workstation (`<windows-node-host>`) | Architect & Coordinator |
-| **Node 2** | `The-Triskelion` | macOS Apple Silicon (ARM64) | Laptop (`<mac-node-host>`) | Frontal Cortex (Metal/Neural Engine) |
-| **Node 3** | `code-47` | Ubuntu Linux 24.04 (x86_64) | Oracle Cloud Infrastructure (`<relay-host>`) | Backend Cloud Worker & Telemetry |
+| **Node 1** | `Windows-PC` | Windows 11 Pro (x86_64) | Workstation (`<windows-node-host>`) | Architect & Coordinator |
+| **Node 2** | `MacBook` | macOS Apple Silicon (ARM64) | Laptop (`<mac-node-host>`) | Frontal Cortex (Metal/Neural Engine) |
+| **Node 3** | `cloud-server` | Ubuntu Linux 24.04 (x86_64) | Oracle Cloud Infrastructure (`<relay-host>`) | Backend Cloud Worker & Telemetry |
 
-* **Protocol Transport:** Encrypted Tailscale WAN + WebSocket AHRP Relay Hub on `code-47:8765`.
+* **Protocol Transport:** Encrypted Tailscale WAN + WebSocket AHRP Relay Hub on `cloud-server:8765`.
 * **Mental Model Synchronization:** Replicated [`CognitiveBlackboard`](../../agent_comms/mesh/blackboard.py) with real-time cognitive deltas (`COGNITIVE_DELTA`).
 
 ---
@@ -23,24 +23,24 @@ All three nodes launched concurrently and connected to `ws://<relay-host>:8765/w
 ================================================================================
 STARTING 3-WAY LIVE TRI-BRAIN TEST
 ================================================================================
-Node 1: Providence (Windows 11)
-Node 2: The-Triskelion (macOS Apple Silicon ARM64)
-Node 3: code-47 (Oracle Cloud Ubuntu Linux x86_64)
+Node 1: Windows-PC (Windows 11)
+Node 2: MacBook (macOS Apple Silicon ARM64)
+Node 3: cloud-server (Oracle Cloud Ubuntu Linux x86_64)
 Relay Hub: ws://<relay-host>:8765/ws
 ================================================================================
 
-[WIN11     ] [Windows Node] Booting Tri-Brain node on Providence (Windows 11)...
-[MACOS     ] [Mac Node] Booting Tri-Brain node on The-Triskelion (macOS Apple Silicon)...
-[WIN11     ] [Windows Node] Connected to AHRP Relay Hub on code-47.
-[MACOS     ] [Mac Node] Connected to AHRP Relay Hub on code-47.
-[WIN11     ] [Windows <- Shared Mind] DELTA: 'mac_status' = {'os': 'macOS 25.6.0 arm64', 'arch': 'arm64', 'metal_acceleration': True, 'neural_engine_ready': True, 'hostname': 'The-Triskelion.local'} | Rationale: Apple Silicon M-series unified memory architecture available for high-speed tensor operations
+[WIN11     ] [Windows Node] Booting Tri-Brain node on Windows-PC (Windows 11)...
+[MACOS     ] [Mac Node] Booting Tri-Brain node on MacBook (macOS Apple Silicon)...
+[WIN11     ] [Windows Node] Connected to AHRP Relay Hub on cloud-server.
+[MACOS     ] [Mac Node] Connected to AHRP Relay Hub on cloud-server.
+[WIN11     ] [Windows <- Shared Mind] DELTA: 'mac_status' = {'os': 'macOS 25.6.0 arm64', 'arch': 'arm64', 'metal_acceleration': True, 'neural_engine_ready': True, 'hostname': 'MacBook.local'} | Rationale: Apple Silicon M-series unified memory architecture available for high-speed tensor operations
 [WIN11     ] [Windows <- Shared Mind] DELTA: 'execution_policy' = zero_copy_memory_ring | Rationale: Apple Silicon unified memory bus allows zero-copy serialization between CPU and GPU kernels
-[MACOS     ] [Mac <- Shared Mind] DELTA: 'windows_status' = {'os': 'Windows 10.0.26200', 'hostname': 'Providence', 'role': 'Architect', 'active': True} | Rationale: Node Alpha established initial coordination framework
-[LINUX     ] [Linux Node] Booting Tri-Brain node on code-47 (Oracle Cloud Ubuntu Linux)...
+[MACOS     ] [Mac <- Shared Mind] DELTA: 'windows_status' = {'os': 'Windows 10.0.26200', 'hostname': 'Windows-PC', 'role': 'Architect', 'active': True} | Rationale: Node Alpha established initial coordination framework
+[LINUX     ] [Linux Node] Booting Tri-Brain node on cloud-server (Oracle Cloud Ubuntu Linux)...
 [LINUX     ] [Linux Node] Connected to AHRP Relay Hub locally.
-[WIN11     ] [Windows <- Shared Mind] DELTA: 'linux_status' = {'os': 'Ubuntu #20-Ubuntu SMP Sat Jul 25 00:58:05 UTC 2026', 'kernel': '6.17.0-1020-oracle', 'loadavg': '0.81 1.49 1.61 5/444 442323', 'cloud_provider': 'Oracle Cloud Infrastructure', 'hostname': 'code-47'} | Rationale: Linux kernel telemetry verified loadavg=0.81 1.49 1.61 5/444 442323
+[WIN11     ] [Windows <- Shared Mind] DELTA: 'linux_status' = {'os': 'Ubuntu #20-Ubuntu SMP Sat Jul 25 00:58:05 UTC 2026', 'kernel': '6.17.0-1020-oracle', 'loadavg': '0.81 1.49 1.61 5/444 442323', 'cloud_provider': 'Oracle Cloud Infrastructure', 'hostname': 'cloud-server'} | Rationale: Linux kernel telemetry verified loadavg=0.81 1.49 1.61 5/444 442323
 [WIN11     ] [Windows Node] All 3 physical nodes actively synchronized into shared mind!
-[MACOS     ] [Mac <- Shared Mind] DELTA: 'linux_status' = {'os': 'Ubuntu #20-Ubuntu SMP Sat Jul 25 00:58:05 UTC 2026', 'kernel': '6.17.0-1020-oracle', 'loadavg': '0.81 1.49 1.61 5/444 442323', 'cloud_provider': 'Oracle Cloud Infrastructure', 'hostname': 'code-47'} | Rationale: Linux kernel telemetry verified loadavg=0.81 1.49 1.61 5/444 442323
+[MACOS     ] [Mac <- Shared Mind] DELTA: 'linux_status' = {'os': 'Ubuntu #20-Ubuntu SMP Sat Jul 25 00:58:05 UTC 2026', 'kernel': '6.17.0-1020-oracle', 'loadavg': '0.81 1.49 1.61 5/444 442323', 'cloud_provider': 'Oracle Cloud Infrastructure', 'hostname': 'cloud-server'} | Rationale: Linux kernel telemetry verified loadavg=0.81 1.49 1.61 5/444 442323
 [MACOS     ] [Mac Node] Received sync from both Windows and Linux nodes!
 [MACOS     ] [Mac Node] Exported Context Capsule: capsule-772c631630a4
 [WIN11     ] [Windows Node] Exported Context Capsule: capsule-bdadf9de47f8

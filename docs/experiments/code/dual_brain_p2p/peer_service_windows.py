@@ -1,5 +1,5 @@
 """
-Distributed P2P Pipeline Node - Providence (Windows)
+Distributed P2P Pipeline Node - Windows-PC (Windows)
 ====================================================
 Runs the Ingestion, Batch Generator, and Cryptographic Ledger Verification Service.
 """
@@ -35,7 +35,7 @@ class WindowsServiceHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({
                 "status": "online",
-                "node": "providence-windows",
+                "node": "windows-pc",
                 "presort_enabled": presort_enabled,
                 "verified_batches": len(verified_ledger),
             }).encode("utf-8"))
@@ -101,7 +101,7 @@ def send_batch(batch_id: int, vector_count: int = 50, presort: bool = False) -> 
         "timestamp": time.time(),
         "presorted": presort,
         "vectors": raw_vectors,
-        "sender": "providence-windows",
+        "sender": "windows-pc",
     }
     req = urllib.request.Request(
         f"{LINUX_NODE_URL}/process_batch",

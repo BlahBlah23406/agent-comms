@@ -1,5 +1,5 @@
 """
-Peer Agent Alpha (Left Hemisphere) - Providence (Windows 11)
+Peer Agent Alpha (Left Hemisphere) - Windows-PC (Windows 11)
 ============================================================
 Symmetric peer agent running on Windows. Coordinates with Peer Agent Beta on Linux
 as two hemispheres of a single mind over a multi-server distributed pipeline.
@@ -31,7 +31,7 @@ import p2p_experiment.peer_service_windows as service
 class PeerAgentWindows:
     def __init__(self, relay_url: str = "ws://<relay-host>:8765/ws"):
         self.agent_id = "peer-alpha-windows"
-        self.machine_id = "providence-win11"
+        self.machine_id = "windows-pc-win11"
         self.relay_url = relay_url
         self.client = AgentRelayClient(
             agent_id=self.agent_id,
@@ -98,7 +98,7 @@ class PeerAgentWindows:
 
         # Step 2: Launch Local Service
         print("\n" + "-" * 70)
-        print(f"[{self.agent_id}] STAGE 2: LAUNCHING PEER SERVICE ON PROVIDENCE:9201")
+        print(f"[{self.agent_id}] STAGE 2: LAUNCHING PEER SERVICE ON WINDOWS-PC:9201")
         print("-" * 70)
         server = service.start_server()
         await asyncio.sleep(1.0)
@@ -108,7 +108,7 @@ class PeerAgentWindows:
             "type": "peer_service_ready",
             "peer": self.agent_id,
             "port": 9201,
-            "node": "providence-windows",
+            "node": "windows-pc",
         })
 
         # Wait for Linux peer service to be ready via direct health check
@@ -132,7 +132,7 @@ class PeerAgentWindows:
         print("\n" + "-" * 70)
         print(f"[{self.agent_id}] STAGE 3: RUNNING DISTRIBUTED DUAL-MACHINE PIPELINE")
         print("-" * 70)
-        print(f"[{self.agent_id}] Dispatching live batches across Tailscale to code-47:9202...")
+        print(f"[{self.agent_id}] Dispatching live batches across Tailscale to cloud-server:9202...")
 
         total_batches = 6
         for i in range(1, total_batches + 1):
@@ -188,7 +188,7 @@ class PeerAgentWindows:
             self.peer_service_ready.set()
 
     async def package_twin_capsule(self):
-        store = CapsuleStore(base_dir=Path("C:/Users/shaya/.agent-comms/capsules"))
+        store = CapsuleStore(base_dir=Path.home() / ".agent-comms" / "capsules")
         packager = CapsulePackager(workspace_path=Path("~/agent-comms/p2p_experiment"), store=store)
 
         learnings = [
@@ -199,7 +199,7 @@ class PeerAgentWindows:
             ),
             EpistemicLearning(
                 category=LearningCategory.ENVIRONMENT,
-                summary="Cross-machine Tailscale network RTT between Providence and code-47 averaged 45-65ms",
+                summary="Cross-machine Tailscale network RTT between Windows-PC and cloud-server averaged 45-65ms",
             ),
         ]
 
@@ -216,7 +216,7 @@ class PeerAgentWindows:
             goal="Operate as one unified mind across Windows and Linux to execute distributed pipeline",
             executive_summary="Left hemisphere completed ingest and proof verification, dynamically adapted to Linux peer optimization.",
             steps=steps,
-            next_action="Audit twin Context Capsule from Right Hemisphere on code-47.",
+            next_action="Audit twin Context Capsule from Right Hemisphere on cloud-server.",
             epistemic_learnings=learnings,
             agent_name=self.agent_id,
         )

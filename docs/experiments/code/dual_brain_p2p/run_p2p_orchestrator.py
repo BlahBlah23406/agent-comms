@@ -2,8 +2,8 @@
 Master P2P Dual-Brain Multi-Machine Orchestrator
 ===============================================
 Orchestrates:
-- Peer Alpha (Left Hemisphere): agy-p2p-alpha on Providence (Windows 11)
-- Peer Beta (Right Hemisphere): agy-p2p-beta on code-47 (Oracle Cloud Ubuntu Linux)
+- Peer Alpha (Left Hemisphere): agy-p2p-alpha on Windows-PC (Windows 11)
+- Peer Beta (Right Hemisphere): agy-p2p-beta on cloud-server (Oracle Cloud Ubuntu Linux)
 Demonstrates two autonomous agents on separate physical machines acting
 as a unified mind over a multi-server distributed pipeline.
 """
@@ -19,21 +19,21 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 SSH_KEY = "~/.ssh/id_ed25519"
-CODE47_IP = "<linux-node-host>"
+LINUX_HOST = "<linux-node-host>"
 
 
 async def main():
     print("\n" + "#" * 85)
     print("#  PEER-TO-PEER DUAL-BRAIN DISTRIBUTED PIPELINE TEST")
     print("#  Two Autonomous Agents Acting as ONE Unified Mind Across Windows & Linux")
-    print("#  Node A: Providence (Windows 11)  <--Tailscale Mesh-->  Node B: code-47 (Ubuntu 24.04)")
+    print("#  Node A: Windows-PC (Windows 11)  <--Tailscale Mesh-->  Node B: cloud-server (Ubuntu 24.04)")
     print("#" * 85 + "\n")
 
-    # Step 1: Launch Peer Beta (Linux) in background on code-47
-    print("[P2P Orchestrator] Starting Peer Beta (Right Hemisphere) on code-47 via SSH...")
+    # Step 1: Launch Peer Beta (Linux) in background on cloud-server
+    print("[P2P Orchestrator] Starting Peer Beta (Right Hemisphere) on cloud-server via SSH...")
     linux_cmd = "pkill -f peer_agent_linux || true; pkill -f peer_service_linux || true; sleep 1; nohup python3 /home/ubuntu/agent-comms/p2p_experiment/peer_agent_linux.py > /home/ubuntu/peer_beta.log 2>&1 & sleep 1; cat /home/ubuntu/peer_beta.log"
     res = subprocess.run(
-        ["ssh", "-i", SSH_KEY, f"ubuntu@{CODE47_IP}", linux_cmd],
+        ["ssh", "-i", SSH_KEY, f"ubuntu@{LINUX_HOST}", linux_cmd],
         capture_output=True,
         text=True,
     )
@@ -41,8 +41,8 @@ async def main():
 
     await asyncio.sleep(2.0)
 
-    # Step 2: Launch Peer Alpha (Windows) on Providence
-    print("[P2P Orchestrator] Starting Peer Alpha (Left Hemisphere) on Providence...\n")
+    # Step 2: Launch Peer Alpha (Windows) on Windows-PC
+    print("[P2P Orchestrator] Starting Peer Alpha (Left Hemisphere) on Windows-PC...\n")
     alpha_script = Path("~/agent-comms/p2p_experiment/peer_agent_windows.py")
 
     alpha_proc = await asyncio.create_subprocess_exec(
@@ -65,12 +65,12 @@ async def main():
 
     await asyncio.sleep(2.0)
 
-    # Step 3: Fetch and display Peer Beta logs from code-47
+    # Step 3: Fetch and display Peer Beta logs from cloud-server
     print("\n" + "=" * 75)
-    print("PEER BETA LOGS (Right Hemisphere on code-47):")
+    print("PEER BETA LOGS (Right Hemisphere on cloud-server):")
     print("=" * 75)
     fetch_beta = subprocess.run(
-        ["ssh", "-i", SSH_KEY, f"ubuntu@{CODE47_IP}", "cat /home/ubuntu/peer_beta.log"],
+        ["ssh", "-i", SSH_KEY, f"ubuntu@{LINUX_HOST}", "cat /home/ubuntu/peer_beta.log"],
         capture_output=True,
         text=True,
     )

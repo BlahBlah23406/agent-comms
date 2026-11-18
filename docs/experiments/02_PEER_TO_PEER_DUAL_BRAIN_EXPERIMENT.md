@@ -6,7 +6,7 @@ In this experiment, we moved beyond the classical **Orchestrator/Worker** patter
 
 ### The Core Premise: "Two Computers, Two Agents, One Mind"
 * A distributed project that **requires multiple computers to execute** (a multi-server, distributed data-processing and cryptographic proof ring).
-* Two separate autonomous agents running on two distinct operating systems across the WAN (`Providence` on Windows 11 and `code-47` on Oracle Cloud Ubuntu Linux).
+* Two separate autonomous agents running on two distinct operating systems across the WAN (`Windows-PC` on Windows 11 and `cloud-server` on Oracle Cloud Ubuntu Linux).
 * Rather than a manager delegating to a worker, the two agents act as **two hemispheres of a single mind**:
   * **Symmetric Peer Parity:** Co-equal authority, symmetric contract negotiation.
   * **Synchronized Cognitive Blackboard (`CognitiveBlackboard`):** A shared, replicated mental model where cognitive deltas broadcast in real-time.
@@ -20,7 +20,7 @@ The distributed workload was designed so that **neither computer could complete 
 
 ```
 ┌──────────────────────────────────────┐            ┌──────────────────────────────────────┐
-│       Node A: Providence (Win 11)    │            │        Node B: code-47 (Ubuntu)      │
+│       Node A: Windows-PC (Win 11)    │            │        Node B: cloud-server (Ubuntu)      │
 │      [Peer Alpha - Left Hemisphere]  │            │     [Peer Beta - Right Hemisphere]   │
 │                                      │            │                                      │
 │  1. Ingest & Batch Generator         │            │  2. Numerical Transform & Proof Node │
@@ -52,8 +52,8 @@ The distributed workload was designed so that **neither computer could complete 
 3. **Consensus Achieved:** Contract locked into both agents' blackboards simultaneously in under 1 second.
 
 ### Stage 2: Cross-Machine Multi-Server Deployment
-* Peer Alpha started local HTTP service on `0.0.0.0:9201` on Providence.
-* Peer Beta started local HTTP service on `0.0.0.0:9202` on code-47.
+* Peer Alpha started local HTTP service on `0.0.0.0:9201` on Windows-PC.
+* Peer Beta started local HTTP service on `0.0.0.0:9202` on cloud-server.
 * Mutual health probes across Tailscale confirmed both services were live.
 
 ### Stage 3: Distributed Pipeline Execution & Live Cognitive Sync ("Acting as One")
@@ -86,8 +86,8 @@ Batch #6: Merkle=mkl-7566407b0855... | Linux Load=1.56 | Valid=True
 ## 4. Twin Context Capsules (Out-of-Session Persistence)
 
 At the conclusion of the test, each hemisphere generated its respective twin Context Capsule:
-* **Left Hemisphere (`capsule-d4f553495bc9` on Providence):** Recorded ingestion, verification ledger state, and dynamic adaptation.
-* **Right Hemisphere (`capsule-633751d95726` on code-47):** Recorded numerical transformation, Merkle proofs, and cognitive discovery.
+* **Left Hemisphere (`capsule-d4f553495bc9` on Windows-PC):** Recorded ingestion, verification ledger state, and dynamic adaptation.
+* **Right Hemisphere (`capsule-633751d95726` on cloud-server):** Recorded numerical transformation, Merkle proofs, and cognitive discovery.
 
 ---
 

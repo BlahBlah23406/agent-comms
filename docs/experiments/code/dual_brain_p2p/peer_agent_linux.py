@@ -1,5 +1,5 @@
 """
-Peer Agent Beta (Right Hemisphere) - code-47 (Ubuntu Linux)
+Peer Agent Beta (Right Hemisphere) - cloud-server (Ubuntu Linux)
 ===========================================================
 Symmetric peer agent running on Oracle Cloud Linux. Coordinates with Peer Agent Alpha
 on Windows as two hemispheres of a single mind over a multi-server distributed pipeline.
@@ -31,7 +31,7 @@ import p2p_experiment.peer_service_linux as service
 class PeerAgentLinux:
     def __init__(self, relay_url: str = "ws://127.0.0.1:8765/ws"):
         self.agent_id = "peer-beta-linux"
-        self.machine_id = "code-47-oracle-cloud"
+        self.machine_id = "cloud-server-oracle"
         self.relay_url = relay_url
         self.client = AgentRelayClient(
             agent_id=self.agent_id,
@@ -68,7 +68,7 @@ class PeerAgentLinux:
             "type": "peer_service_ready",
             "peer": self.agent_id,
             "port": 9202,
-            "node": "code47-linux",
+            "node": "cloud-server-linux",
         })
         print(f"[{self.agent_id}] Broadcasted peer service readiness on port 9202.")
 

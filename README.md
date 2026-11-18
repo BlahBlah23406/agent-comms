@@ -119,7 +119,7 @@ When working with AI coding agents (Claude Desktop, Antigravity, Cursor, OpenCla
 
 **Agent Comms** provides a unified solution:
 - **Context Capsules (Out-of-Session Handoff):** Packages an agent's task roadmap, architectural decisions, rejected hypotheses, and uncommitted git diffs into a compact, portable bundle. The next agent session resumes immediately without burning context tokens.
-- **Unified Capsule Storage Server:** A central persistent storage hub (e.g. running on a cloud VM or companion station like `code-47` over a private Tailscale network) where all fleet agents automatically upload, query, pull, and synchronize capsules.
+- **Unified Capsule Storage Server:** A central persistent storage hub (e.g. running on a cloud VM or companion station like `cloud-server` over a private Tailscale network) where all fleet agents automatically upload, query, pull, and synchronize capsules.
 - **AHRP Live Relay (In-Session Collaboration):** A real-time WebSocket mesh supporting peer discovery, publish/subscribe messaging, and cross-machine Remote Procedure Calls (RPC).
 - **Native MCP Integration:** Works out-of-the-box with Claude Desktop, Antigravity, OpenClaw, and Cursor via the Model Context Protocol.
 
@@ -133,20 +133,20 @@ The breakthrough was separating **cognitive state** from the git tree. A git sta
 
 Once capsules solved handoff, I wanted agents to talk *while* they worked. **AHRP Live Relay** gives them a real-time WebSocket mesh: peer discovery, shared beliefs, and direct RPC across machines. Two agents on different computers can literally negotiate a contract and adapt each other's pipelines without human intervention.
 
-With v1.1, we introduced **Unified Capsule Storage**: instead of manual file copies or fragmented local stores, a designated companion machine (such as `code-47` over Tailscale) hosts a unified storage server. All agents automatically sync save-states, making context accessible instantly on command and automatically on any node.
+With v1.1, we introduced **Unified Capsule Storage**: instead of manual file copies or fragmented local stores, a designated companion machine (such as `cloud-server` over Tailscale) hosts a unified storage server. All agents automatically sync save-states, making context accessible instantly on command and automatically on any node.
 
 ---
 
 ## Cross-Machine Demo
 
-The video below shows a real capsule packed on **Providence (Windows)** and unpacked on **Code-47 (Linux)** with zero context loss.
+The video below shows a real capsule packed on **a Windows PC** and unpacked on **a Linux cloud server** with zero context loss.
 
 ![Cross-Machine Context Capsule Demo](cross-machine-demo.gif)
 
 **What happens:**
-1. On Providence, `agent-comms capsule pack` creates `DEMO-01` with a summary, next step, and epistemic learning.
-2. The capsule is automatically synced to the Unified Storage Server on Code-47 over Tailscale.
-3. On Code-47, `agent-comms capsule unpack DEMO-01` restores the exact task briefing — task ID, summary, next action, and learning all intact.
+1. On the Windows PC, `agent-comms capsule pack` creates `DEMO-01` with a summary, next step, and epistemic learning.
+2. The capsule is automatically synced to the Unified Storage Server on the Linux server over Tailscale.
+3. On the Linux server, `agent-comms capsule unpack DEMO-01` restores the exact task briefing — task ID, summary, next action, and learning all intact.
 
 This is the out-of-session handoff problem solved end-to-end across two physical machines.
 
@@ -159,10 +159,10 @@ Agent Comms captures cognitive state alongside your working tree without polluti
 - **State & Decisions:** Records what worked, what was rejected, and the immediate next steps.
 - **Code Diffs:** Captures staged, unstaged, and untracked changes into a clean patch.
 - **Briefing Generation:** Produces a token-efficient Markdown briefing tailored for the incoming agent.
-- **Unified Fleet Storage:** Agents push to and pull from a centralized storage server (e.g. `http://code-47:8765`), keeping all machines in sync.
+- **Unified Fleet Storage:** Agents push to and pull from a centralized storage server (e.g. `http://cloud-server:8765`), keeping all machines in sync.
 
 ```
-Machine A (Active Session)              Unified Storage (Code-47)            Machine B (New Session)
+Machine A (Active Session)              Unified Storage (Cloud-Server)            Machine B (New Session)
  ┌──────────────────────────┐               ┌───────────────────┐               ┌──────────────────────────┐
  │ Agent exports capsule    │────[Upload]──▶│ Central Capsule   │────[Download]▶│ Agent imports capsule    │
  │ (diffs + state + roadmap)│               │ Persistent Store  │               │ (restores diffs + state) │
@@ -224,13 +224,13 @@ agent-comms capsule pack \
 ```
 
 ### 2. Unified Capsule Storage Server (Central Hub)
-Run a unified persistent capsule storage server on your companion host (e.g. `code-47`):
+Run a unified persistent capsule storage server on your companion host (e.g. `cloud-server`):
 ```bash
 # Start storage server on host
 agent-comms storage server --host 0.0.0.0 --port 8765 --dir ~/.agent-comms/capsules
 
 # Point client machines to the unified storage server (over Tailscale or LAN)
-agent-comms config set storage_server_url "http://100.118.132.56:8765"
+agent-comms config set storage_server_url "http://<server-ip>:8765"
 agent-comms config set auto_sync_storage true
 
 # Push / Pull / Sync capsules
@@ -292,10 +292,10 @@ agent-comms quota evacuate --task "AUTH-01" --target gemini
 Set up any machine in 1 command and automatically link it to your peer network:
 ```bash
 # On primary laptop:
-agent-comms setup --alias laptop --peers laptop,desktop-gpu,code-47
+agent-comms setup --alias laptop --peers laptop,desktop-gpu,cloud-server
 
 # On secondary/remote machine (with auto-wake background standby service):
-agent-comms setup --alias desktop-gpu --peers laptop,desktop-gpu,code-47 --standby
+agent-comms setup --alias desktop-gpu --peers laptop,desktop-gpu,cloud-server --standby
 ```
 
 ### 8. Run the Live Collaboration Demo
@@ -322,7 +322,7 @@ Add to your MCP settings file:
       "command": "agent-comms",
       "args": ["mcp"],
       "env": {
-        "AGENT_COMMS_STORAGE_URL": "http://100.118.132.56:8765"
+        "AGENT_COMMS_STORAGE_URL": "http://<server-ip>:8765"
       }
     }
   }
@@ -332,8 +332,8 @@ Add to your MCP settings file:
 Once added, interact naturally with your agent:
 > *"Save my progress into a handoff capsule for task AUTH-01."*  
 > *"Resume task AUTH-01 from my latest capsule."*  
-> *"Sync our capsules with code-47 storage server."*  
-> *"Start an active cross-session with code-47 for task PERF-99."*  
+> *"Sync our capsules with my storage server."*  
+> *"Start an active cross-session with cloud-server for task PERF-99."*  
 > *"Check our quota status and evacuate to Gemini if we are close to Claude's rate limit."*
 
 ---

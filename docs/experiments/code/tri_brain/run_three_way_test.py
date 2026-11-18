@@ -2,9 +2,9 @@
 Tri-Brain 3-Way Master Orchestrator
 ===================================
 Runs a real-time distributed mesh simultaneously across 3 physical devices:
-1. Windows 11 (Providence) - Local process
-2. macOS Apple Silicon (The-Triskelion) - Over Tailscale SSH
-3. Ubuntu Linux 24.04 (code-47) - Over Tailscale / Direct SSH
+1. Windows 11 (Windows-PC) - Local process
+2. macOS Apple Silicon (MacBook) - Over Tailscale SSH
+3. Ubuntu Linux 24.04 (cloud-server) - Over Tailscale / Direct SSH
 """
 
 import asyncio
@@ -20,23 +20,23 @@ async def run_three_way_test():
     print("=" * 80)
     print("STARTING 3-WAY LIVE TRI-BRAIN TEST")
     print("=" * 80)
-    print("Node 1: Providence (Windows 11)")
-    print("Node 2: The-Triskelion (macOS Apple Silicon ARM64)")
-    print("Node 3: code-47 (Oracle Cloud Ubuntu Linux x86_64)")
+    print("Node 1: Windows-PC (Windows 11)")
+    print("Node 2: MacBook (macOS Apple Silicon ARM64)")
+    print("Node 3: cloud-server (Oracle Cloud Ubuntu Linux x86_64)")
     print("Relay Hub: ws://<relay-host>:8765/ws")
     print("=" * 80)
 
-    # 1. Copy node_mac.py to The-Triskelion
-    print("\n[Orchestrator] Synchronizing node_mac.py to The-Triskelion...")
+    # 1. Copy node_mac.py to MacBook
+    print("\n[Orchestrator] Synchronizing node_mac.py to MacBook...")
     mac_script = str(PROJECT_ROOT / "tests" / "tri_brain" / "node_mac.py")
     subprocess.run(
-        f'scp -i <ssh-key-path> "{mac_script}" the-triskelion:/tmp/node_mac.py',
+        f'scp -i <ssh-key-path> "{mac_script}" macbook:/tmp/node_mac.py',
         shell=True,
         check=True,
     )
 
-    # 2. Copy node_linux.py to code-47
-    print("[Orchestrator] Synchronizing node_linux.py to code-47...")
+    # 2. Copy node_linux.py to cloud-server
+    print("[Orchestrator] Synchronizing node_linux.py to cloud-server...")
     linux_script = str(PROJECT_ROOT / "tests" / "tri_brain" / "node_linux.py")
     subprocess.run(
         f'scp -i <ssh-key-path> "{linux_script}" ubuntu@<linux-node-host>:/tmp/node_linux.py',
@@ -71,8 +71,8 @@ async def run_three_way_test():
         "-n",
         "-o",
         "StrictHostKeyChecking=no",
-        "the-triskelion",
-        "/Users/shaya/agent-comms/venv/bin/python /tmp/node_mac.py",
+        "macbook",
+        "python3 /tmp/node_mac.py",
     ]
     proc_mac = await asyncio.create_subprocess_exec(
         *cmd_mac,

@@ -1,5 +1,5 @@
 """
-Tri-Brain Node: Windows 11 (Providence)
+Tri-Brain Node: Windows 11 (Windows-PC)
 =======================================
 Operates as Node 1 in the 3-Way Cross-Platform Mesh.
 """
@@ -17,12 +17,12 @@ RELAY_URL = "ws://<relay-host>:8765/ws"
 
 
 async def run_windows_node():
-    print("[Windows Node] Booting Tri-Brain node on Providence (Windows 11)...", flush=True)
+    print("[Windows Node] Booting Tri-Brain node on Windows-PC (Windows 11)...", flush=True)
 
     node = DualBrainNode(
         agent_id="tri-node-windows",
         relay_url=RELAY_URL,
-        machine_id="Providence",
+        machine_id="Windows-PC",
         role="coordinator-architect",
         capabilities=["windows_coordination", "merkle_ledger", "fastapi"],
     )
@@ -44,14 +44,14 @@ async def run_windows_node():
     node.on_belief_update(on_belief)
 
     await node.start()
-    print("[Windows Node] Connected to AHRP Relay Hub on code-47.", flush=True)
+    print("[Windows Node] Connected to AHRP Relay Hub on cloud-server.", flush=True)
 
     # 1. Propose Tri-Brain Contract
     await node.propose_contract(
         "TRI_BRAIN_CONSENSUS_V1",
         {
             "topology": "tri_mesh",
-            "nodes": ["Providence_Win11", "Triskelion_macOS", "Code47_Ubuntu"],
+            "nodes": ["WindowsPC_Win11", "MacBook_macOS", "CloudServer_Ubuntu"],
             "verification": "merkle_sha256",
         },
     )

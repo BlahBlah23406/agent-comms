@@ -44,7 +44,7 @@ class AgentCommsMCPServer:
                         "goal": {"type": "string", "description": "Overall task goal"},
                         "executive_summary": {"type": "string", "description": "Summary of work done so far"},
                         "next_action": {"type": "string", "description": "Specific next instruction for successor agent"},
-                        "push_to_storage": {"type": "boolean", "default": True, "description": "Whether to automatically upload capsule to unified storage server on code-47"},
+                        "push_to_storage": {"type": "boolean", "default": True, "description": "Whether to automatically upload capsule to unified storage server"},
                         "push_to_cloud": {"type": "boolean", "default": False, "description": "Whether to upload capsule to external cloud storage (s3, gcs, azure, github)"},
                         "cloud_provider": {"type": "string", "description": "Target cloud provider"},
                         "epistemic_learnings": {
@@ -67,7 +67,7 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "import_handoff_capsule",
-                "description": "Imports and applies a Context Capsule from local store or unified storage server on code-47, restoring workspace changes and briefing context.",
+                "description": "Imports and applies a Context Capsule from local store or unified storage server, restoring workspace changes and briefing context.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -105,7 +105,7 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "list_saved_capsules",
-                "description": "Lists all available Context Capsules in the local store and fleet-wide unified storage server on code-47.",
+                "description": "Lists all available Context Capsules in the local store and fleet-wide unified storage server.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -115,7 +115,7 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "sync_capsules",
-                "description": "Synchronizes Context Capsules between local machine and the unified storage server on code-47.",
+                "description": "Synchronizes Context Capsules between local machine and the unified storage server.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

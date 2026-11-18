@@ -1,6 +1,6 @@
 # Multi-Machine Live Experiments Archive
 
-This directory contains the complete technical reports, telemetry data, and reproducible execution scripts from the live multi-machine validation experiments performed between **Providence** (Windows 11) and **code-47** (Oracle Cloud Ubuntu 24.04).
+This directory contains the complete technical reports, telemetry data, and reproducible execution scripts from the live multi-machine validation experiments performed between **Windows-PC** (Windows 11) and **cloud-server** (Oracle Cloud Ubuntu 24.04).
 
 ---
 
@@ -25,7 +25,7 @@ This directory contains the complete technical reports, telemetry data, and repr
 
 ### 3. [Experiment 3: 3-Way Tri-Brain Distributed Mesh](03_THREE_WAY_TRI_BRAIN_EXPERIMENT.md)
 * **Paradigm:** Heterogeneous 3-way peer mesh ("Three Computers, Three OSs, One Mind").
-* **Nodes:** `Providence` (Windows 11) + `The-Triskelion` (macOS Apple Silicon) + `code-47` (Ubuntu Linux 24.04).
+* **Nodes:** `Windows-PC` (Windows 11) + `MacBook` (macOS Apple Silicon) + `cloud-server` (Ubuntu Linux 24.04).
 * **Key Innovations:**
   * Real-time full-mesh cognitive sync across 3 distinct operating systems.
   * Apple Silicon Metal & unified memory zero-copy policy asserted from macOS.

@@ -1,5 +1,5 @@
 """
-Distributed P2P Pipeline Node - code-47 (Ubuntu Linux)
+Distributed P2P Pipeline Node - cloud-server (Ubuntu Linux)
 ======================================================
 Runs the High-Throughput Numerical Transformation & Merkle Reduction Service.
 """
@@ -34,7 +34,7 @@ class LinuxServiceHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({
                 "status": "online",
-                "node": "code47-linux",
+                "node": "cloud-server-linux",
                 "processed_count": processed_count,
             }).encode("utf-8"))
         else:
