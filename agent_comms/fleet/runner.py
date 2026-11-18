@@ -43,6 +43,7 @@ COMMANDS = {
     },
 }
 DEFAULT_AGENTS = ["claude", "codex", "agy"]
+MODEL_FLAGS = {"claude": "--model", "codex": "-m", "agy": "--model"}
 WINDOW_SECONDS = 5 * 3600
 COOLDOWN_SECONDS = 3600
 MAX_OUTPUT = 20000
@@ -144,6 +145,9 @@ def build_command(slot: str, prompt: str, cwd: str) -> List[str]:
     mode = "full" if full else "edits"
     model = config_manager.get("ollama_model") or "gpt-oss:120b-cloud"
     cmd = [part.format(prompt=prompt, model=model) for part in COMMANDS[agent][mode]]
+    chosen = config_manager.get(f"{agent}_model")
+    if chosen and agent in MODEL_FLAGS:
+        cmd[1:1] = [MODEL_FLAGS[agent], chosen]
     if not host_name:
         return cmd
     host = _host(host_name)
