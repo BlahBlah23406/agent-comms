@@ -82,6 +82,21 @@ class TestFleet(unittest.TestCase):
         messages, _ = read_transcript(str(path))
         self.assertEqual(messages, [("user", "Explain fleet"), ("assistant", "Fleet distributes tasks.")])
 
+    def test_read_transcript_agy_jsonl(self):
+        path = self.temp_dir / "agy.jsonl"
+        lines = [
+            json.dumps({
+                "type": "USER_INPUT",
+                "content": "<USER_REQUEST>\nFix the bug\n</USER_REQUEST>\n<ADDITIONAL_METADATA>time</ADDITIONAL_METADATA>",
+            }),
+            json.dumps({"type": "GENERIC", "content": "tool output"}),
+            json.dumps({"type": "PLANNER_RESPONSE", "content": "Fixed it."}),
+        ]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        messages, _ = read_transcript(str(path))
+        self.assertEqual(messages, [("user", "Fix the bug"), ("assistant", "Fixed it.")])
+
     def test_autosave_every_second_turn_and_immediate_on_limit(self):
         cfg_dir = self.temp_dir / "config"
         cfg_dir.mkdir()

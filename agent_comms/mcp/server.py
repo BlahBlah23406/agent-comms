@@ -195,12 +195,28 @@ class AgentCommsMCPServer:
                 },
             },
             {
-                "name": "resume_latest",
-                "description": "Gets the newest saved work for this folder (saved every other turn by any agent on any machine) so you can continue it.",
+                "name": "save_progress",
+                "description": "Saves where this chat is at so any other app or agent can continue it. Chat apps: call this after every second reply.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "task_id": {"type": "string", "description": "Optional task ID; defaults to this folder"},
+                        "project": {"type": "string", "description": "Short project name (use the code folder name if there is one)"},
+                        "goal": {"type": "string", "description": "What the user wants overall"},
+                        "summary": {"type": "string", "description": "What is done so far and key decisions"},
+                        "next_step": {"type": "string", "description": "The very next thing to do"},
+                        "app": {"type": "string", "description": "Which app you are, e.g. claude-desktop, gemini-app"},
+                    },
+                    "required": ["project", "goal", "summary", "next_step"],
+                },
+            },
+            {
+                "name": "resume_latest",
+                "description": "Gets the newest saved work for a project (saved by any app or agent on any machine) so you can continue it.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project": {"type": "string", "description": "Project or folder name; defaults to the current folder"},
+                        "task_id": {"type": "string", "description": "Optional exact task ID"},
                         "apply_workspace": {"type": "boolean", "default": False, "description": "Also restore the saved code changes (use when moving to another machine)"},
                     },
                 },
@@ -213,6 +229,7 @@ class AgentCommsMCPServer:
                     "properties": {
                         "tasks": {"type": "array", "items": {"type": "string"}, "description": "One complete, self-contained instruction per helper. Give each helper different files."},
                         "agent": {"type": "string", "description": "Optional: force one agent, e.g. codex or claude@code-47"},
+                        "folder": {"type": "string", "description": "Project folder the helpers work in (needed from chat apps)"},
                     },
                     "required": ["tasks"],
                 },
@@ -445,9 +462,26 @@ class AgentCommsMCPServer:
             )
             return json.dumps(result.model_dump(), indent=2)
 
+        elif name == "save_progress":
+            from agent_comms.fleet.autosave import task_id_for
+            folder = Path(arguments["project"]).expanduser()
+            capsule = CapsulePackager(workspace_path=folder if folder.is_dir() else self.workspace_path).package(
+                task_id=task_id_for(folder),
+                title=f"{folder.name}: {arguments['goal'][:80]}",
+                executive_summary=arguments["summary"],
+                goal=arguments["goal"],
+                next_action=arguments["next_step"],
+                agent_name=arguments.get("app") or "chat-app",
+                capture_loose_files=False,
+            )
+            self.store.save(capsule)
+            return json.dumps({"status": "saved", "task_id": capsule.task_id, "capsule_id": capsule.capsule_id})
+
         elif name == "resume_latest":
             from agent_comms.fleet.autosave import latest, task_id_for
-            task_id = arguments.get("task_id") or task_id_for(self.workspace_path.resolve())
+            project = arguments.get("project")
+            folder = Path(project).expanduser() if project else self.workspace_path.resolve()
+            task_id = arguments.get("task_id") or task_id_for(folder)
             capsule = await asyncio.to_thread(latest, task_id, self.store)
             if not capsule:
                 return json.dumps({"error": f"No saved work found for '{task_id}'."})
@@ -459,7 +493,8 @@ class AgentCommsMCPServer:
         elif name == "run_on_agents":
             from agent_comms.fleet import runner
             try:
-                jobs = runner.submit(arguments["tasks"], cwd=str(self.workspace_path), agent=arguments.get("agent"))
+                folder = arguments.get("folder") or str(self.workspace_path)
+                jobs = runner.submit(arguments["tasks"], cwd=str(Path(folder).expanduser()), agent=arguments.get("agent"))
             except Exception as e:
                 return json.dumps({"error": str(e)})
             return json.dumps([{"job_id": j["id"], "agent": j["agent"], "task": j["prompt"]} for j in jobs], indent=2)

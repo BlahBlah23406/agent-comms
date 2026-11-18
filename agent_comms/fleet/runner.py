@@ -42,7 +42,7 @@ COMMANDS = {
         "full": ["ollama", "run", "{model}", "{prompt}"],
     },
 }
-DEFAULT_AGENTS = ["claude", "codex", "gemini", "agy"]
+DEFAULT_AGENTS = ["claude", "codex", "agy"]
 WINDOW_SECONDS = 5 * 3600
 COOLDOWN_SECONDS = 3600
 MAX_TRIES = 3

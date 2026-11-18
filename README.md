@@ -12,7 +12,7 @@
 
 ## TL;DR
 
-`agent-comms` is a plugin for the terminal AI agents you already use (Claude Code, Codex, Gemini CLI, Antigravity/agy). It does two things automatically:
+`agent-comms` is a plugin for the terminal AI agents you already use (Claude Code, Codex, Antigravity CLI/agy). It does two things automatically:
 1. Saves your work every other turn so you can switch to any other agent or machine and say "continue".
 2. Spreads big tasks across all your agent CLIs (and SSH machines) so no single subscription runs out.
 
@@ -79,7 +79,7 @@ agent-comms jobs
 agent-comms jobs <id>
 ```
 
-Inside an agent chat, the agent can use the MCP tools `run_on_agents`, `check_jobs`, `agent_status`, and `resume_latest` to do the same work.
+Inside an agent chat, the agent can use the MCP tools `save_progress`, `run_on_agents`, `check_jobs`, `agent_status`, and `resume_latest` to do the same work.
 
 **Permissions:** By default, helper agents may edit files in the project folder, but nothing riskier. If you want helpers to run any command without prompts, set:
 ```bash
@@ -87,9 +87,9 @@ agent-comms config set fleet_permissions full
 ```
 Warning: only enable `full` in projects you trust.
 
-**Ollama:** Local or cloud Ollama models are only used when you add `ollama` to the agent list:
+**Ollama:** By default, the helper list is `claude`, `codex`, `agy`. Local or cloud Ollama models are only used when you add `ollama` to the agent list:
 ```bash
-agent-comms config set fleet_agents '["claude","codex","gemini","agy","ollama"]'
+agent-comms config set fleet_agents '["claude","codex","agy","ollama"]'
 agent-comms config set ollama_model <model>
 ```
 
@@ -100,6 +100,14 @@ agent-comms fleet add-host code-47 --ssh me@100.118.132.56 --dir ~/myproject --a
 Add `--powershell` if the remote machine runs Windows. The folder on that machine (`--dir`) must already have the project. Remove a host with `agent-comms fleet remove-host <name>`.
 
 Note: Kaggle and other remote GPU services are not supported yet.
+
+---
+
+## Chat Apps (Claude Desktop, Gemini app, ChatGPT)
+
+Chat apps have no hooks, so run `agent-comms instructions` and paste the text into the app's custom instructions. Then the app calls the `save_progress` MCP tool every second reply and `resume_latest` when you say `continue`, and can hand coding work to agents with `run_on_agents` (with `folder` set). Use the same project name as the code folder so chat apps and coding agents share saves.
+
+Setup adds the MCP server to Claude Desktop automatically. In the Gemini Mac app, add it under connector settings as a local MCP server with command `agent-comms` and argument `mcp`. ChatGPT only accepts remote HTTPS MCP connectors, so it is not connected yet; for now, paste the output of `agent-comms resume` into ChatGPT to continue there.
 
 ---
 
@@ -304,7 +312,7 @@ Agent Comms includes full MCP tooling for Context Capsules, Unified Storage, Clo
 - `push_handoff_capsule` & `pull_handoff_capsule` & `list_saved_capsules`
 - `start_cross_session` & `scan_network_peers`
 - `check_quota_status`, `record_usage_and_guard`, & `preemptive_quota_evacuate`
-- `resume_latest`, `run_on_agents`, `check_jobs`, & `agent_status`
+- `save_progress`, `resume_latest`, `run_on_agents`, `check_jobs`, & `agent_status`
 
 Add to your MCP settings file:
 ```json

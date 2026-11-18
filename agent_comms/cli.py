@@ -1059,6 +1059,12 @@ def handle_agents(args):
         print(f"{r['agent']:<20} {r['runs_last_5h']} runs in the last 5 hours{rest}")
 
 
+def handle_instructions(args):
+    from agent_comms.fleet.install import APP_GUIDANCE
+    print("Paste this into the custom instructions of Claude Desktop, the Gemini app, or ChatGPT:\n")
+    print(APP_GUIDANCE)
+
+
 def handle_fleet_add_host(args):
     from agent_comms.config import config_manager
     hosts = [h for h in config_manager.get("fleet_hosts") or [] if h["name"] != args.name]
@@ -1346,6 +1352,9 @@ def main():
 
     agents_p = subparsers.add_parser("agents", help="Show which agent CLIs are ready and how much each was used")
     agents_p.set_defaults(func=handle_agents)
+
+    instr_p = subparsers.add_parser("instructions", help="Print the text to paste into chat apps (Claude, Gemini, ChatGPT)")
+    instr_p.set_defaults(func=handle_instructions)
 
     fleet_parser = subparsers.add_parser("fleet", help="Add or remove SSH machines that can run agents")
     fleet_subs = fleet_parser.add_subparsers(dest="subcommand")

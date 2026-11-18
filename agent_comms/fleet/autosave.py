@@ -20,6 +20,7 @@ from agent_comms.quota.watchdog import RATE_LIMIT_PATTERNS
 
 KEEP_LOCAL = 5
 MAX_SESSIONS = 200
+ROLES = {"gemini": "assistant", "model": "assistant", "USER_INPUT": "user", "PLANNER_RESPONSE": "assistant"}
 
 
 def task_id_for(folder: Path) -> str:
@@ -46,11 +47,12 @@ def _message(obj: Any) -> Optional[Tuple[str, str]]:
     if not isinstance(msg, dict):
         return None
     role = msg.get("role") or obj.get("type")
-    if role in ("gemini", "model"):
-        role = "assistant"
+    role = ROLES.get(role, role)
     if role not in ("user", "assistant"):
         return None
-    text = _text(msg.get("content")).strip()
+    text = _text(msg.get("content"))
+    request = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", text, re.S)
+    text = (request.group(1) if request else text).strip()
     if not text or text.startswith("<"):
         return None
     return role, text
@@ -106,10 +108,10 @@ def autosave(
     store: Optional[CapsuleStore] = None,
 ) -> Optional[ContextCapsule]:
     folder = Path(payload.get("cwd") or Path.cwd()).resolve()
-    session_id = str(payload.get("session_id") or payload.get("thread_id") or folder)
+    session_id = str(payload.get("session_id") or payload.get("conversationId") or folder)
     turn = _count_turn(session_id)
 
-    messages, tail = read_transcript(payload.get("transcript_path"))
+    messages, tail = read_transcript(payload.get("transcript_path") or payload.get("transcriptPath"))
     reply = payload.get("last_assistant_message") or payload.get("prompt_response") or ""
     limited = hit_limit(f"{reply}\n{tail}")
     every = every or int(config_manager.get("autosave_every") or 2)
@@ -120,7 +122,7 @@ def autosave(
     if not reply:
         reply = next((t for r, t in reversed(messages) if r == "assistant"), "")
     first = users[0] if users else "Unknown goal"
-    last = payload.get("prompt") or (users[-1] if users else first)
+    last = payload.get("prompt") or payload.get("lastUserInput") or (users[-1] if users else first)
 
     capsule = CapsulePackager(workspace_path=folder).package(
         task_id=task_id_for(folder),

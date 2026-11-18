@@ -1,7 +1,7 @@
 """
 Plugin Installer
 ================
-Adds agent-comms to Claude Code, Codex, Gemini CLI, and Antigravity:
+Adds agent-comms to Claude Code, Codex, and Antigravity (agy):
 the autosave hook, the MCP server, and a short instructions block.
 """
 
@@ -28,10 +28,20 @@ This machine is `{alias}`. Other machines: {peers}.
 2. **Sharing the work:** before a big task, decide if it splits into parts that don't touch the same files.
    If it does, hand the parts out with the `run_on_agents` tool (or `agent-comms run "part 1" "part 2"`),
    keep one part for yourself, then check results with `check_jobs`. It picks whichever of
-   claude / codex / gemini / agy (and SSH hosts) has been used the least and skips any that hit a limit.
+   claude / codex / agy (and SSH hosts) has been used the least and skips any that hit a limit.
    Small tasks: just do them. If the user says not to use other agents, don't.
 3. Read every helper's result before you tell the user it is done.
 {end}
+"""
+
+APP_GUIDANCE = """You are connected to the agent-comms tools. Follow these rules without being asked:
+1. After every second reply, call save_progress with a short project name, the goal, what is done,
+   and the next step. Use the same project name every time (the code folder name if there is one).
+2. If I say "continue" or "pick up where I left off", call resume_latest with the project name
+   and keep going from that briefing.
+3. If a task is big and is about code on my computer, split it into parts and hand them out with
+   run_on_agents (set folder to the project folder), then read the results with check_jobs.
+   Don't do this if I say not to.
 """
 
 
@@ -108,27 +118,18 @@ def install_codex(home: Path, python: str, alias: str):
     return hooks_path
 
 
-def install_gemini(home: Path, python: str, alias: str):
-    path = home / ".gemini" / "settings.json"
+def install_agy(home: Path, python: str, alias: str):
+    path = home / ".gemini" / "config" / "hooks.json"
     data = _read_json(path)
-    data.setdefault("mcpServers", {})["agent-comms"] = {
-        "command": python,
-        "args": ["-m", "agent_comms.cli", "mcp"],
-        "env": {"AGENT_COMMS_MACHINE_ALIAS": alias},
-    }
-    data.setdefault("hooksConfig", {})["enabled"] = True
-    _set_hook(data.setdefault("hooks", {}), "AfterAgent", hook_command(python, "gemini"), timeout=30000)
+    data["agent-comms"] = {"Stop": [{"type": "command", "command": hook_command(python, "agy"), "timeout": 30}]}
     _write_json(path, data)
-    return path
-
-
-def install_agy(python: str, alias: str):
     subprocess.run(
         ["agy", "mcp", "add", "--env", f"AGENT_COMMS_MACHINE_ALIAS={alias}",
          "agent-comms", python, "-m", "agent_comms.cli", "mcp"],
         capture_output=True,
         check=False,
     )
+    return path
 
 
 def install_all(home: Path, alias: str, peers: List[str], python: str = sys.executable) -> List[str]:
@@ -139,7 +140,7 @@ def install_all(home: Path, alias: str, peers: List[str], python: str = sys.exec
     steps: List[tuple[str, Path, Callable[[], Any]]] = [
         ("Claude Code", home / ".claude", lambda: install_claude(home, python)),
         ("Codex", home / ".codex", lambda: install_codex(home, python, alias)),
-        ("Gemini CLI", home / ".gemini", lambda: install_gemini(home, python, alias)),
+        ("Antigravity (agy)", home / ".gemini" / "antigravity-cli", lambda: install_agy(home, python, alias)),
     ]
     for name, folder, step in steps:
         if not folder.exists():
@@ -153,15 +154,10 @@ def install_all(home: Path, alias: str, peers: List[str], python: str = sys.exec
     for name, md in [
         ("Claude Code", home / ".claude" / "CLAUDE.md"),
         ("Codex", home / ".codex" / "AGENTS.md"),
-        ("Gemini / Antigravity", home / ".gemini" / "GEMINI.md"),
+        ("Antigravity (agy)", home / ".gemini" / "GEMINI.md"),
     ]:
         if md.parent.exists():
             write_block(md, guidance)
             done.append(f"{name}: instructions in {md}")
 
-    try:
-        install_agy(python, alias)
-        done.append("Antigravity (agy): MCP")
-    except FileNotFoundError:
-        pass
     return done
