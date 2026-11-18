@@ -45,7 +45,6 @@ COMMANDS = {
 DEFAULT_AGENTS = ["claude", "codex", "agy"]
 WINDOW_SECONDS = 5 * 3600
 COOLDOWN_SECONDS = 3600
-MAX_TRIES = 3
 MAX_OUTPUT = 20000
 
 WORKER_PREFIX = (
@@ -210,7 +209,7 @@ def work(job_id: str):
     prompt = WORKER_PREFIX.format(cwd=job["cwd"], prompt=job["prompt"])
     slot = job["agent"]
 
-    while slot and len(job["tried"]) < MAX_TRIES:
+    while slot and slot not in job["tried"]:
         job.update(agent=slot, status="running", started=time.time())
         job["tried"].append(slot)
         write_job(job)
