@@ -248,7 +248,13 @@ def work(job_id: str):
         broken = hit_limit(output[-2000:]) or code not in (0, -1)
         if not broken or job["fixed_agent"]:
             break
-        _cool_down(slot, BUSY_SECONDS if code == BUSY_EXIT else COOLDOWN_SECONDS)
+        if code == BUSY_EXIT:
+            host = slot.partition("@")[2]
+            for other in available_slots():
+                if other.partition("@")[2] == host:
+                    _cool_down(other, BUSY_SECONDS)
+        else:
+            _cool_down(slot)
         slot = pick(exclude=job["tried"])
         if slot:
             _record_run(slot)
