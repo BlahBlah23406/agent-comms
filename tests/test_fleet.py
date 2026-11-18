@@ -161,18 +161,18 @@ class TestFleet(unittest.TestCase):
 
         with patch.object(config_manager, "get", side_effect=fake_get):
             ps_cmd = runner.build_command("claude@winbox", "fix it's bug", "/tmp")
-            self.assertEqual(ps_cmd[:3], ["ssh", "-o", "BatchMode=yes"])
-            self.assertEqual(ps_cmd[5], "user@win")
+            self.assertEqual(ps_cmd[:6], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR"])
+            self.assertEqual(ps_cmd[6], "user@win")
             self.assertEqual(
-                ps_cmd[6],
-                "cd 'C:\\work\\it''s_here'; & 'claude' '-p' '--permission-mode' 'acceptEdits' 'fix it''s bug'",
+                ps_cmd[7],
+                "cd 'C:\\work\\it''s_here' -ErrorAction SilentlyContinue; & 'claude' '-p' '--permission-mode' 'acceptEdits' 'fix it''s bug'",
             )
 
             sh_cmd = runner.build_command("claude@linuxbox", "fix bug", "/tmp")
-            self.assertEqual(sh_cmd[:6], ["ssh", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", "user@linux"])
+            self.assertEqual(sh_cmd[:7], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", "user@linux"])
             self.assertEqual(
-                sh_cmd[6],
-                "cd ~/proj && claude -p --permission-mode acceptEdits 'fix bug'",
+                sh_cmd[7],
+                "cd ~/proj 2>/dev/null; claude -p --permission-mode acceptEdits 'fix bug'",
             )
 
 

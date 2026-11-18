@@ -149,10 +149,10 @@ def build_command(slot: str, prompt: str, cwd: str) -> List[str]:
     host = _host(host_name)
     folder = host.get("dir") or _same_folder(cwd)
     if host.get("shell") == "powershell":
-        remote = f"cd {_quote_ps(folder)}; & " + " ".join(_quote_ps(c) for c in cmd)
+        remote = f"cd {_quote_ps(folder)} -ErrorAction SilentlyContinue; & " + " ".join(_quote_ps(c) for c in cmd)
     else:
-        remote = f"cd {folder} && {shlex.join(cmd)}"
-    return ["ssh", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", host["ssh"], remote]
+        remote = f"cd {folder} 2>/dev/null; {shlex.join(cmd)}"
+    return ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", host["ssh"], remote]
 
 
 def submit(prompts: List[str], cwd: Optional[str] = None, agent: Optional[str] = None) -> List[Dict[str, Any]]:
