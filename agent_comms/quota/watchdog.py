@@ -36,6 +36,7 @@ RATE_LIMIT_PATTERNS = [
     re.compile(r"Rate limit reached", re.IGNORECASE),
     re.compile(r"(hit|reached) your (usage|rate) limit", re.IGNORECASE),
     re.compile(r"usage limit reached", re.IGNORECASE),
+    re.compile(r"out of (usage )?credits", re.IGNORECASE),
     re.compile(r"\d+-hour limit reached", re.IGNORECASE),
     re.compile(r"RESOURCE_EXHAUSTED", re.IGNORECASE),
     re.compile(r"429 Too Many Requests", re.IGNORECASE),

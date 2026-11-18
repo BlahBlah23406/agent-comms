@@ -132,15 +132,23 @@ def _quote_ps(arg: str) -> str:
     return "'" + arg.replace("'", "''") + "'"
 
 
+def _same_folder(cwd: str) -> str:
+    try:
+        return "~/" + Path(cwd).resolve().relative_to(Path.home().resolve()).as_posix()
+    except ValueError:
+        return "~"
+
+
 def build_command(slot: str, prompt: str, cwd: str) -> List[str]:
     agent, _, host_name = slot.partition("@")
-    mode = "full" if config_manager.get("fleet_permissions") == "full" else "edits"
+    full = config_manager.get("fleet_permissions") == "full" or agent in (config_manager.get("fleet_full_agents") or [])
+    mode = "full" if full else "edits"
     model = config_manager.get("ollama_model") or "gpt-oss:120b-cloud"
     cmd = [part.format(prompt=prompt, model=model) for part in COMMANDS[agent][mode]]
     if not host_name:
         return cmd
     host = _host(host_name)
-    folder = host.get("dir", "~")
+    folder = host.get("dir") or _same_folder(cwd)
     if host.get("shell") == "powershell":
         remote = f"cd {_quote_ps(folder)}; & " + " ".join(_quote_ps(c) for c in cmd)
     else:
@@ -175,6 +183,7 @@ def submit(prompts: List[str], cwd: Optional[str] = None, agent: Optional[str] =
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
         jobs.append(job)
     return jobs

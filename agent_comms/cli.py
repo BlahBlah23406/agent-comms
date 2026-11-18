@@ -1068,7 +1068,9 @@ def handle_instructions(args):
 def handle_fleet_add_host(args):
     from agent_comms.config import config_manager
     hosts = [h for h in config_manager.get("fleet_hosts") or [] if h["name"] != args.name]
-    host = {"name": args.name, "ssh": args.ssh, "dir": args.dir, "agents": args.agents.split(",")}
+    host = {"name": args.name, "ssh": args.ssh, "agents": args.agents.split(",")}
+    if args.dir:
+        host["dir"] = args.dir
     if args.powershell:
         host["shell"] = "powershell"
     config_manager.set("fleet_hosts", hosts + [host])
@@ -1361,7 +1363,7 @@ def main():
     fh_add = fleet_subs.add_parser("add-host", help="Add a machine reachable over SSH")
     fh_add.add_argument("name", help="Short name, e.g. code-47")
     fh_add.add_argument("--ssh", required=True, help="SSH target, e.g. me@100.118.132.56")
-    fh_add.add_argument("--dir", default="~", help="Project folder on that machine")
+    fh_add.add_argument("--dir", help="Project folder on that machine (default: same folder as here, under home)")
     fh_add.add_argument("--agents", default="claude,codex", help="Comma list of agent CLIs installed there")
     fh_add.add_argument("--powershell", action="store_true", help="The machine is Windows (PowerShell)")
     fh_add.set_defaults(func=handle_fleet_add_host)
