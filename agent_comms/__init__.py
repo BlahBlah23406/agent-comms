@@ -2,7 +2,7 @@
 Agent Comms: Universal Cross-Agent, Cross-Machine Handover & Live Relay Suite
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from agent_comms.models.capsule import ContextCapsule, EpistemicLearning, TaskGraph, TaskStep
 from agent_comms.models.protocol import RelayFrame, AgentDescriptor

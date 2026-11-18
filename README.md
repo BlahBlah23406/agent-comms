@@ -12,7 +12,94 @@
 
 ## TL;DR
 
-Agent Comms lets AI coding agents (Claude, Antigravity, Cursor, OpenClaw) share working memory across sessions and machines. Pack a context capsule on one computer, resume on another — no context lost.
+`agent-comms` is a plugin for the terminal AI agents you already use (Claude Code, Codex, Gemini CLI, Antigravity/agy). It does two things automatically:
+1. Saves your work every other turn so you can switch to any other agent or machine and say "continue".
+2. Spreads big tasks across all your agent CLIs (and SSH machines) so no single subscription runs out.
+
+---
+
+## Quick Start (3 steps)
+
+1. Install the package:
+```bash
+pip install git+https://github.com/BlahBlah23406/agent-comms.git
+```
+
+2. Run setup to install the hooks, MCP server, and instructions into your agents:
+```bash
+agent-comms setup --alias <name>
+```
+
+3. (Optional) Point to a storage server so other machines see your saves:
+```bash
+agent-comms config set storage_server_url http://<server>:8765
+agent-comms config set auto_sync_storage true
+```
+
+---
+
+## Switching Agents (Autosave)
+
+After setup, a hook saves a capsule of your chat every 2 turns and right away when a usage limit message shows up. Codex asks you once to trust the new hook; say yes.
+
+To pick up where you left off in any agent, just say `continue` (which calls the `resume_latest` MCP tool) or run:
+```bash
+agent-comms resume
+```
+
+On a different machine, add `--apply` to also bring the uncommitted code changes over:
+```bash
+agent-comms resume --apply
+```
+
+To change how often the hook saves (for example, every 3 turns):
+```bash
+agent-comms config set autosave_every 3
+```
+
+---
+
+## Sharing Work Across Agents
+
+When a big task splits into independent parts, `agent-comms` can hand those parts out to other agent CLIs in the background. It picks the least-used CLI in the last 5 hours. If an agent hits a usage limit, `agent-comms` rests it for an hour and moves the task to another agent.
+
+Check which agent CLIs are installed and how many times each ran in the last 5 hours:
+```bash
+agent-comms agents
+```
+
+Hand tasks to other agents in the background (or add `--wait` to wait for results, or `--agent <slot>` to force a specific one):
+```bash
+agent-comms run "task one" "task two"
+```
+
+Check background jobs or read the output of one job:
+```bash
+agent-comms jobs
+agent-comms jobs <id>
+```
+
+Inside an agent chat, the agent can use the MCP tools `run_on_agents`, `check_jobs`, `agent_status`, and `resume_latest` to do the same work.
+
+**Permissions:** By default, helper agents may edit files in the project folder, but nothing riskier. If you want helpers to run any command without prompts, set:
+```bash
+agent-comms config set fleet_permissions full
+```
+Warning: only enable `full` in projects you trust.
+
+**Ollama:** Local or cloud Ollama models are only used when you add `ollama` to the agent list:
+```bash
+agent-comms config set fleet_agents '["claude","codex","gemini","agy","ollama"]'
+agent-comms config set ollama_model <model>
+```
+
+**SSH machines:** You can add other computers that you can reach over SSH:
+```bash
+agent-comms fleet add-host code-47 --ssh me@100.118.132.56 --dir ~/myproject --agents claude,codex
+```
+Add `--powershell` if the remote machine runs Windows. The folder on that machine (`--dir`) must already have the project. Remove a host with `agent-comms fleet remove-host <name>`.
+
+Note: Kaggle and other remote GPU services are not supported yet.
 
 ---
 
@@ -217,6 +304,7 @@ Agent Comms includes full MCP tooling for Context Capsules, Unified Storage, Clo
 - `push_handoff_capsule` & `pull_handoff_capsule` & `list_saved_capsules`
 - `start_cross_session` & `scan_network_peers`
 - `check_quota_status`, `record_usage_and_guard`, & `preemptive_quota_evacuate`
+- `resume_latest`, `run_on_agents`, `check_jobs`, & `agent_status`
 
 Add to your MCP settings file:
 ```json

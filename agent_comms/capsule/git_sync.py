@@ -97,7 +97,7 @@ class GitHelper:
             return []
         modified = []
         for line in res.stdout.splitlines():
-            line = line.strip()
+            line = line.rstrip()
             if not line:
                 continue
             status = line[:2]

@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="agent-comms",
-    version="1.1.0",
+    version="1.2.0",
     description=(
         "Unified storage, context handover, and live relay for AI coding agents across sessions and machines"
     ),

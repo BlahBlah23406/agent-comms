@@ -194,6 +194,46 @@ class AgentCommsMCPServer:
                     "required": ["task_id", "provider"],
                 },
             },
+            {
+                "name": "resume_latest",
+                "description": "Gets the newest saved work for this folder (saved every other turn by any agent on any machine) so you can continue it.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string", "description": "Optional task ID; defaults to this folder"},
+                        "apply_workspace": {"type": "boolean", "default": False, "description": "Also restore the saved code changes (use when moving to another machine)"},
+                    },
+                },
+            },
+            {
+                "name": "run_on_agents",
+                "description": "Hands tasks to other agent CLIs (claude, codex, gemini, agy, SSH hosts) in the background, picking the least used one for each. Returns job IDs right away; read results with check_jobs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tasks": {"type": "array", "items": {"type": "string"}, "description": "One complete, self-contained instruction per helper. Give each helper different files."},
+                        "agent": {"type": "string", "description": "Optional: force one agent, e.g. codex or claude@code-47"},
+                    },
+                    "required": ["tasks"],
+                },
+            },
+            {
+                "name": "check_jobs",
+                "description": "Shows the status and output of helper jobs. Set wait_seconds to wait for them to finish.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "job_ids": {"type": "array", "items": {"type": "string"}},
+                        "wait_seconds": {"type": "integer", "default": 0},
+                    },
+                    "required": ["job_ids"],
+                },
+            },
+            {
+                "name": "agent_status",
+                "description": "Lists the agent CLIs ready to take work, how much each was used in the last 5 hours, and which are resting after hitting a limit.",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
         ]
 
     async def handle_tool_call(self, name: str, arguments: Dict[str, Any]) -> str:
@@ -405,6 +445,37 @@ class AgentCommsMCPServer:
             )
             return json.dumps(result.model_dump(), indent=2)
 
+        elif name == "resume_latest":
+            from agent_comms.fleet.autosave import latest, task_id_for
+            task_id = arguments.get("task_id") or task_id_for(self.workspace_path.resolve())
+            capsule = await asyncio.to_thread(latest, task_id, self.store)
+            if not capsule:
+                return json.dumps({"error": f"No saved work found for '{task_id}'."})
+            res = {"capsule_id": capsule.capsule_id, "briefing": capsule.to_briefing_markdown()}
+            if arguments.get("apply_workspace"):
+                res["restoration"] = self.unpacker.apply(capsule, apply_workspace=True)["git_patch_message"]
+            return json.dumps(res, indent=2)
+
+        elif name == "run_on_agents":
+            from agent_comms.fleet import runner
+            try:
+                jobs = runner.submit(arguments["tasks"], cwd=str(self.workspace_path), agent=arguments.get("agent"))
+            except Exception as e:
+                return json.dumps({"error": str(e)})
+            return json.dumps([{"job_id": j["id"], "agent": j["agent"], "task": j["prompt"]} for j in jobs], indent=2)
+
+        elif name == "check_jobs":
+            from agent_comms.fleet import runner
+            jobs = await asyncio.to_thread(runner.wait, arguments["job_ids"], arguments.get("wait_seconds", 0))
+            return json.dumps([
+                {k: j.get(k) for k in ("id", "agent", "status", "exit_code", "output")} if j else None
+                for j in jobs
+            ], indent=2)
+
+        elif name == "agent_status":
+            from agent_comms.fleet import runner
+            return json.dumps(runner.status(), indent=2)
+
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     async def run_stdio(self):
@@ -446,7 +517,7 @@ class AgentCommsMCPServer:
                     "result": {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "agent-comms-mcp", "version": "1.1.0"},
+                        "serverInfo": {"name": "agent-comms-mcp", "version": "1.2.0"},
                     },
                 }
             elif method == "notifications/initialized":

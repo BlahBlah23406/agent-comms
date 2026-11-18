@@ -45,6 +45,7 @@ class CapsulePackager:
         session_id: Optional[str] = None,
         resumption_prompt: Optional[str] = None,
         target_agent: Optional[str] = None,
+        capture_loose_files: bool = True,
     ) -> ContextCapsule:
         """
         Packages current workspace state into a ContextCapsule.
@@ -73,7 +74,7 @@ class CapsulePackager:
             branch_name=self.git.get_current_branch() if is_git else None,
             base_commit=self.git.get_head_commit() if is_git else None,
             git_diff=self.git.get_git_diff() if is_git else None,
-            untracked_files=self.git.get_untracked_files(),
+            untracked_files=self.git.get_untracked_files() if is_git or capture_loose_files else {},
             modified_files=self.git.get_modified_files() if is_git else [],
         )
 

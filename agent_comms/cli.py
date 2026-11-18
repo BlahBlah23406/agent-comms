@@ -558,7 +558,7 @@ def handle_setup(args):
     if alias not in peers:
         peers.append(alias)
 
-    cloud_provider = getattr(args, "cloud", "relay")
+    cloud_provider = getattr(args, "cloud", None)
 
     cur_os = platform.system()
     target_homes = [home]
@@ -596,7 +596,8 @@ def handle_setup(args):
                     cfg_data = {}
             cfg_data["machine_alias"] = alias
             cfg_data["known_peers"] = peers
-            cfg_data["default_cloud_provider"] = cloud_provider
+            if cloud_provider:
+                cfg_data["default_cloud_provider"] = cloud_provider
             cfg_path.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
             print(f"[+] Configured Machine Node Identity ({target_home}): '{alias}'")
         except Exception as e:
@@ -631,63 +632,6 @@ def handle_setup(args):
             print(f"[+] Configured Claude Code MCP in: {claude_code_config}")
         except Exception as e:
             logger.debug("Could not update Claude Code config (%s): %s", claude_code_config, e)
-
-        # 5. Configure Claude Global Guidelines (~/.claude/CLAUDE.md)
-        claude_dir = target_home / ".claude"
-        try:
-            claude_dir.mkdir(parents=True, exist_ok=True)
-            claude_md = claude_dir / "CLAUDE.md"
-            claude_guidelines = f"""# Claude Code Global Guidelines: Distributed Agent Collaboration & Context Capsules
-
-You have access to the **`agent-comms`** MCP server (`agent-comms`), enabling cross-machine collaboration, zero-loss task handoffs, cloud synchronization, and preemptive quota protection.
-
-## Machine Identity & Mesh Network
-- **Current Machine Node:** `{alias}`
-- **Known Peer Network Nodes:** {', '.join(peers)}
-
-## Available Capabilities & Procedures
-1. **Preemptive AI Quota & Rate-Limit Guard:**
-   - If approaching rate-limit thresholds (hourly, weekly, or request limit), call `preemptive_quota_evacuate` BEFORE reaching a 429 lockout.
-   - This freezes uncommitted changes, untracked files, and epistemic learnings into a Context Capsule with a tailored resumption prompt for a successor provider (e.g. Claude -> Gemini) or peer node.
-   - Background SessionWatchdog and Lifecycle Hooks also automatically capture workspace state if a pause or limit is detected.
-
-2. **Active Cross-Session Collaboration:**
-   - To start a real-time collaborative session with peer machines: call `start_cross_session(session_id="...", target_machine="<peer-alias>")`.
-   - The framework automatically wakes the peer machine over LAN UDP (port 8764), restores code context, and links both machines into a real-time dual-brain cognitive session.
-   - Use `scan_network_peers()` to discover online or standby nodes.
-
-3. **Context Capsule Handoff & Cloud Sync:**
-   - To save progress across sessions or before logging off: `push_handoff_capsule(...)`.
-   - To resume a task from another machine or cloud: `pull_handoff_capsule(capsule_id="...", apply_workspace=True)`.
-   - To check saved capsules: `list_cloud_capsules()` or `list_saved_capsules()`.
-"""
-            claude_md.write_text(claude_guidelines, encoding="utf-8")
-            print(f"[+] Created Claude Global Guidelines at: {claude_md}")
-        except Exception as e:
-            logger.debug("Could not write CLAUDE.md: %s", e)
-
-        # 6. Configure Claude Code Lifecycle Hooks (~/.claude/settings.json)
-        try:
-            settings_path = claude_dir / "settings.json"
-            s_data = {}
-            if settings_path.exists():
-                try:
-                    s_data = json.loads(settings_path.read_text(encoding="utf-8"))
-                except Exception:
-                    s_data = {}
-            if "hooks" not in s_data:
-                s_data["hooks"] = {}
-            hook_base = f"{python_exe} -m agent_comms.cli quota hook"
-            s_data["hooks"]["PreToolUse"] = [
-                {"matcher": ".*", "command": f"{hook_base} --event PreToolUse"}
-            ]
-            s_data["hooks"]["Stop"] = [
-                {"command": f"{hook_base} --event Stop"}
-            ]
-            settings_path.write_text(json.dumps(s_data, indent=2), encoding="utf-8")
-            print(f"[+] Configured Claude Code Preemptive Quota Hooks at: {settings_path}")
-        except Exception as e:
-            logger.debug("Could not write Claude settings.json: %s", e)
 
         # 7. Configure Antigravity / Gemini
         agy_paths = [
@@ -745,15 +689,10 @@ You have access to the **`agent-comms`** MCP server (`agent-comms`), enabling cr
         except Exception as e:
             print(f"[!] Warning updating Claude Desktop config: {e}")
 
-    # Also try invoking agy CLI if available
-    try:
-        subprocess.run(
-            ["agy", "mcp", "add", "--env", f"AGENT_COMMS_MACHINE_ALIAS={alias}", "agent-comms", python_exe, "-m", "agent_comms.cli", "mcp"],
-            capture_output=True,
-            check=False,
-        )
-    except Exception:
-        pass
+    from agent_comms.fleet.install import install_all
+    for target_home in target_homes:
+        for line in install_all(target_home, alias, peers, python_exe):
+            print(f"[+] {line}")
 
     # 8. Standby Service (Auto-Wake Background Daemon & Quota Watchdog)
     if getattr(args, "standby", False):
@@ -935,7 +874,11 @@ def handle_config_show(args):
 
 def handle_config_set(args):
     from agent_comms.config import config_manager
-    config_manager.set(args.key, args.value)
+    try:
+        value = json.loads(args.value)
+    except ValueError:
+        value = args.value
+    config_manager.set(args.key, value)
     print(f"[+] Successfully set '{args.key}' = '{args.value}'")
 
 
@@ -1044,6 +987,92 @@ def handle_quota_watch(args):
         asyncio.run(watchdog.run_loop())
     except KeyboardInterrupt:
         print("\n[*] SessionWatchdog stopped.")
+
+
+def handle_autosave(args):
+    from agent_comms.fleet.autosave import autosave
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        payload = {}
+    try:
+        autosave(payload, agent=args.agent, every=args.every)
+    except Exception as e:
+        logger.debug("Autosave failed: %s", e)
+    print("{}")
+
+
+def handle_resume(args):
+    from agent_comms.fleet.autosave import latest, task_id_for
+    task_id = args.task or task_id_for(Path(args.dir or Path.cwd()).resolve())
+    capsule = latest(task_id)
+    if not capsule:
+        print(f"No saved work found for '{task_id}'.")
+        return
+    if args.apply:
+        res = CapsuleUnpacker(workspace_path=Path(args.dir) if args.dir else None).apply(capsule)
+        print(f"[+] Code changes: {res['git_patch_message']}")
+    print(capsule.to_briefing_markdown())
+
+
+def _print_job(job):
+    print(f"[{job['id']}] {job['status']:<8} {job['agent']:<16} {job['prompt'][:60]}")
+
+
+def handle_run(args):
+    from agent_comms.fleet import runner
+    jobs = runner.submit(args.prompts, cwd=args.dir, agent=args.agent)
+    for job in jobs:
+        _print_job(job)
+    if args.wait:
+        for job in runner.wait([j["id"] for j in jobs]):
+            print(f"\n===== {job['id']} ({job['agent']}, {job['status']}) =====")
+            print(job.get("output", ""))
+    else:
+        print("\nSee results with: agent-comms jobs <id>")
+
+
+def handle_jobs(args):
+    from agent_comms.fleet import runner
+    if args.work:
+        runner.work(args.work)
+        return
+    if args.id:
+        job = runner.read_job(args.id)
+        if not job:
+            print(f"No job '{args.id}'.")
+            return
+        _print_job(job)
+        print(job.get("output", "(still running)"))
+        return
+    for job in runner.list_jobs():
+        _print_job(job)
+
+
+def handle_agents(args):
+    from agent_comms.fleet import runner
+    rows = runner.status()
+    if not rows:
+        print("No agent CLIs found. Install one of: claude, codex, gemini, agy.")
+    for r in rows:
+        rest = f"  resting until {r['resting_until']}" if r["resting_until"] else ""
+        print(f"{r['agent']:<20} {r['runs_last_5h']} runs in the last 5 hours{rest}")
+
+
+def handle_fleet_add_host(args):
+    from agent_comms.config import config_manager
+    hosts = [h for h in config_manager.get("fleet_hosts") or [] if h["name"] != args.name]
+    host = {"name": args.name, "ssh": args.ssh, "dir": args.dir, "agents": args.agents.split(",")}
+    if args.powershell:
+        host["shell"] = "powershell"
+    config_manager.set("fleet_hosts", hosts + [host])
+    print(f"[+] Added host '{args.name}'. Its agents: {', '.join(host['agents'])}")
+
+
+def handle_fleet_remove_host(args):
+    from agent_comms.config import config_manager
+    config_manager.set("fleet_hosts", [h for h in config_manager.get("fleet_hosts") or [] if h["name"] != args.name])
+    print(f"[+] Removed host '{args.name}'.")
 
 
 def main():
@@ -1291,6 +1320,46 @@ def main():
     q_watch.add_argument("--interval", type=float, default=3.0, help="Check interval in seconds")
     q_watch.set_defaults(func=handle_quota_watch)
 
+    # --- Autosave & Fleet Subcommands ---
+    auto_p = subparsers.add_parser("autosave", help="Hook: save a capsule every other turn (reads hook JSON on stdin)")
+    auto_p.add_argument("--agent", default="claude", help="Which agent is calling (claude, codex, gemini, agy)")
+    auto_p.add_argument("--every", type=int, help="Save every N turns (default 2)")
+    auto_p.set_defaults(func=handle_autosave)
+
+    resume_p = subparsers.add_parser("resume", help="Show the latest saved work for this folder")
+    resume_p.add_argument("task", nargs="?", help="Task ID (default: this folder)")
+    resume_p.add_argument("--apply", action="store_true", help="Also restore the saved code changes")
+    resume_p.add_argument("--dir", help="Project folder")
+    resume_p.set_defaults(func=handle_resume)
+
+    run_p = subparsers.add_parser("run", help="Hand tasks to other agent CLIs in the background")
+    run_p.add_argument("prompts", nargs="+", help="One task per argument")
+    run_p.add_argument("--agent", help="Force one agent, e.g. codex or claude@code-47")
+    run_p.add_argument("--dir", help="Project folder")
+    run_p.add_argument("--wait", action="store_true", help="Wait and print the results")
+    run_p.set_defaults(func=handle_run)
+
+    jobs_p = subparsers.add_parser("jobs", help="List background jobs or show one")
+    jobs_p.add_argument("id", nargs="?", help="Job ID")
+    jobs_p.add_argument("--work", help=argparse.SUPPRESS)
+    jobs_p.set_defaults(func=handle_jobs)
+
+    agents_p = subparsers.add_parser("agents", help="Show which agent CLIs are ready and how much each was used")
+    agents_p.set_defaults(func=handle_agents)
+
+    fleet_parser = subparsers.add_parser("fleet", help="Add or remove SSH machines that can run agents")
+    fleet_subs = fleet_parser.add_subparsers(dest="subcommand")
+    fh_add = fleet_subs.add_parser("add-host", help="Add a machine reachable over SSH")
+    fh_add.add_argument("name", help="Short name, e.g. code-47")
+    fh_add.add_argument("--ssh", required=True, help="SSH target, e.g. me@100.118.132.56")
+    fh_add.add_argument("--dir", default="~", help="Project folder on that machine")
+    fh_add.add_argument("--agents", default="claude,codex", help="Comma list of agent CLIs installed there")
+    fh_add.add_argument("--powershell", action="store_true", help="The machine is Windows (PowerShell)")
+    fh_add.set_defaults(func=handle_fleet_add_host)
+    fh_rm = fleet_subs.add_parser("remove-host", help="Remove a machine")
+    fh_rm.add_argument("name")
+    fh_rm.set_defaults(func=handle_fleet_remove_host)
+
     # --- MCP Subcommand ---
     mcp_p = subparsers.add_parser("mcp", help="Run Model Context Protocol stdio server")
     mcp_p.add_argument("--dir", help="Workspace root directory")
@@ -1308,7 +1377,7 @@ def main():
     setup_p = subparsers.add_parser("setup", help="Auto-configure MCP for Claude Desktop, Claude Code, Antigravity, and Cursor")
     setup_p.add_argument("--alias", help="Unique node alias for this machine (e.g. laptop, desktop, cloud-vm)")
     setup_p.add_argument("--peers", help="Comma-separated list of known peer aliases")
-    setup_p.add_argument("--cloud", choices=["relay", "github", "s3", "gcs", "azure"], default="relay", help="Default cloud capsule provider")
+    setup_p.add_argument("--cloud", choices=["storage", "relay", "github", "s3", "gcs", "azure"], help="Default cloud capsule provider (unchanged if left out)")
     setup_p.add_argument("--standby", action="store_true", help="Generate/install background standby auto-wake service")
     setup_p.set_defaults(func=handle_setup)
 
