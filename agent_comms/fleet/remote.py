@@ -116,14 +116,17 @@ def run(encoded: str) -> int:
     spec = json.loads(base64.b64decode(encoded).decode("utf-8"))
     if spec.get("snapshot"):
         spec["snapshot_data"] = sys.stdin.read().strip()
-    state = capacity.check()
-    if state["busy"]:
-        print(f"BUSY: {state['reason']}")
-        return BUSY_EXIT
-
-    marker = config_manager.config_dir / "jobs" / f"incoming-{os.getpid()}.pid"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    from agent_comms.fleet.runner import _Lock
+    jobs_dir = config_manager.config_dir / "jobs"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    marker = jobs_dir / f"incoming-{os.getpid()}.pid"
+    # Check and register in one step: jobs that arrive together must see each other.
+    with _Lock(jobs_dir / "admit.lock"):
+        state = capacity.check()
+        if state["busy"]:
+            print(f"BUSY: {state['reason']}")
+            return BUSY_EXIT
+        marker.touch()
     try:
         return _run_here(spec)
     finally:

@@ -15,7 +15,7 @@ from typing import Dict, Optional
 
 from agent_comms.config import config_manager
 
-DEFAULTS = {"cap_cpu_percent": 85, "cap_running_agents": 4, "cap_min_free_mb": 1024}
+DEFAULTS = {"cap_cpu_percent": 85, "cap_running_agents": 4, "cap_min_free_mb": 1024, "cap_mb_per_job": 400}
 
 
 def _cap(name: str) -> float:
@@ -98,8 +98,10 @@ def check() -> Dict[str, object]:
         reason = "switched off (agent-comms config set accept_work true to turn back on)"
     elif cpu is not None and cpu > _cap("cap_cpu_percent"):
         reason = f"CPU at {cpu:.0f}% (cap {_cap('cap_cpu_percent'):.0f}%)"
-    elif free is not None and free < _cap("cap_min_free_mb"):
-        reason = f"only {free:.0f} MB free memory (cap {_cap('cap_min_free_mb'):.0f} MB)"
+    elif free is not None and free - agents * _cap("cap_mb_per_job") < _cap("cap_min_free_mb"):
+        # Jobs that just started haven't used their memory yet, so set some aside for each.
+        reason = (f"only {free:.0f} MB free memory with {agents} helper jobs running "
+                  f"(cap {_cap('cap_min_free_mb'):.0f} MB + {_cap('cap_mb_per_job'):.0f} MB per job)")
     elif agents >= _cap("cap_running_agents"):
         reason = f"{agents} helper jobs already running (cap {_cap('cap_running_agents'):.0f})"
     return {

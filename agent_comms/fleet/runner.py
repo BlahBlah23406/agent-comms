@@ -284,6 +284,8 @@ def pick(exclude: Optional[List[str]] = None, avoid: Optional[set] = None,
     """Least-used free slot. Providers in `avoid` (the caller's own) go last; within a batch,
     providers take turns (`batch` counts what each already got)."""
     rows = [r for r in status() if not r["resting_until"] and r["agent"] not in (exclude or [])]
+    full = _full_hosts()
+    rows = [r for r in rows if r["agent"].partition("@")[2] not in full]
     if any("@" not in r["agent"] for r in rows) and capacity.check()["busy"]:
         rows = [r for r in rows if "@" in r["agent"]]
     if not rows:
@@ -303,6 +305,21 @@ def pick(exclude: Optional[List[str]] = None, avoid: Optional[set] = None,
         provider = r["agent"].partition("@")[0]
         return (provider in avoid, (batch or {}).get(provider, 0), by_provider[provider], load(r))
     return min(rows, key=rank)["agent"]
+
+
+def _full_hosts() -> set:
+    """Machines that already have as many of our jobs as they should take at once (`max_jobs`, default 2)."""
+    counts: Dict[str, int] = {}
+    for path in _data_dir().glob("*.json"):
+        try:
+            job = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        host = job.get("agent", "").partition("@")[2]
+        if host and job.get("status") in ("queued", "running") and (job.get("status") == "queued" or _alive(job.get("pid"))):
+            counts[host] = counts.get(host, 0) + 1
+    limits = {h["name"]: int(h.get("max_jobs", 2)) for h in config_manager.get("fleet_hosts") or []}
+    return {h for h, n in counts.items() if n >= limits.get(h, 2)}
 
 
 def _host(name: str) -> Dict[str, Any]:
