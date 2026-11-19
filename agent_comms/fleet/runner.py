@@ -66,7 +66,7 @@ MAX_OUTPUT = 20000
 BROKEN_PATTERNS = {
     # Exact CLI error lines only: a helper writing *about* logins or sandboxes must not match.
     "its sandbox can't start there": re.compile(r"^bwrap: |Failed to create unified exec process", re.M),
-    "it isn't logged in there": re.compile(r"^Waiting for authentication \(timeout|^Error: authentication timed out|^Please run /login", re.M),
+    "it isn't logged in for SSH there (ssh in once and run that CLI to log in)": re.compile(r"^Waiting for authentication \(timeout|^Error: authentication timed out|^Please run /login", re.M),
 }
 
 FOLDER_TOKEN = "@@AGENT_COMMS_FOLDER@@"
