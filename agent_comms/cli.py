@@ -992,11 +992,16 @@ def handle_quota_watch(args):
 def handle_autosave(args):
     from agent_comms.fleet.autosave import autosave
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
-    except ValueError:
+        if args.payload:
+            raw = Path(args.payload).read_text(encoding="utf-8")
+            Path(args.payload).unlink(missing_ok=True)
+        else:
+            raw = sys.stdin.read()
+        payload = json.loads(raw or "{}")
+    except (OSError, ValueError):
         payload = {}
     try:
-        autosave(payload, agent=args.agent, every=args.every)
+        autosave(payload, agent=args.agent, every=args.every, force=args.force)
     except Exception as e:
         logger.debug("Autosave failed: %s", e)
     print("{}")
@@ -1021,7 +1026,7 @@ def _print_job(job):
 
 def handle_run(args):
     from agent_comms.fleet import runner
-    jobs = runner.submit(args.prompts, cwd=args.dir, agent=args.agent)
+    jobs = runner.submit(args.prompts, cwd=args.dir, agent=args.agent, caller=runner.detect_caller())
     for job in jobs:
         _print_job(job)
     if args.wait:
@@ -1060,6 +1065,11 @@ def handle_busy(args):
         return
     print(f"CPU: {state['cpu_percent']}%  Free memory: {state['free_memory_mb']} MB  Agent CLIs running: {state['running_agents']}")
     print(f"Busy: {state['reason']}" if state["busy"] else "Ready to take helper work.")
+
+
+def handle_remote_run(args):
+    from agent_comms.fleet import remote
+    sys.exit(remote.run(args.spec))
 
 
 def handle_agents(args):
@@ -1347,6 +1357,8 @@ def main():
     auto_p = subparsers.add_parser("autosave", help="Hook: save a capsule every other turn (reads hook JSON on stdin)")
     auto_p.add_argument("--agent", default="claude", help="Which agent is calling (claude, codex, gemini, agy)")
     auto_p.add_argument("--every", type=int, help="Save every N turns (default 2)")
+    auto_p.add_argument("--force", action="store_true", help="Save now, whatever the turn count")
+    auto_p.add_argument("--payload", help=argparse.SUPPRESS)
     auto_p.set_defaults(func=handle_autosave)
 
     resume_p = subparsers.add_parser("resume", help="Show the latest saved work for this folder")
@@ -1357,7 +1369,7 @@ def main():
 
     run_p = subparsers.add_parser("run", help="Hand tasks to other agent CLIs in the background")
     run_p.add_argument("prompts", nargs="+", help="One task per argument")
-    run_p.add_argument("--agent", help="Force one agent, e.g. codex or claude@my-server")
+    run_p.add_argument("--agent", help="Try this agent first, e.g. codex or claude@my-server")
     run_p.add_argument("--dir", help="Project folder")
     run_p.add_argument("--wait", action="store_true", help="Wait and print the results")
     run_p.set_defaults(func=handle_run)
@@ -1369,6 +1381,10 @@ def main():
 
     agents_p = subparsers.add_parser("agents", help="Show which agent CLIs are ready and how much each was used")
     agents_p.set_defaults(func=handle_agents)
+
+    rr_p = subparsers.add_parser("remote-run", help=argparse.SUPPRESS)
+    rr_p.add_argument("spec")
+    rr_p.set_defaults(func=handle_remote_run)
 
     busy_p = subparsers.add_parser("busy", help="Show if this machine is too busy to take helper work")
     busy_p.add_argument("--gate", action="store_true", help=argparse.SUPPRESS)

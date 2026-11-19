@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
+import time
 from typing import Dict, Optional
 
 from agent_comms.config import config_manager
@@ -30,9 +31,27 @@ def _powershell(command: str) -> str:
     return res.stdout.strip()
 
 
+def _linux_cpu() -> float:
+    def sample():
+        values = [int(v) for v in open("/proc/stat", encoding="utf-8").readline().split()[1:]]
+        return values[3] + values[4], sum(values)
+    idle1, total1 = sample()
+    time.sleep(1)
+    idle2, total2 = sample()
+    return 100 * (1 - (idle2 - idle1) / max(total2 - total1, 1))
+
+
 def cpu_percent() -> Optional[float]:
-    if hasattr(os, "getloadavg"):
-        return os.getloadavg()[0] / (os.cpu_count() or 1) * 100
+    """Real CPU use across all cores, 0-100."""
+    system = platform.system()
+    try:
+        if system == "Linux":
+            return _linux_cpu()
+        if system == "Darwin":
+            out = subprocess.run(["ps", "-A", "-o", "%cpu="], capture_output=True, text=True, timeout=10).stdout
+            return sum(float(v) for v in out.split()) / (os.cpu_count() or 1)
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return None
     try:
         return float(_powershell(
             "((Get-Counter '\\Processor(_Total)\\% Processor Time' -SampleInterval 1 -MaxSamples 3)"

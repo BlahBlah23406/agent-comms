@@ -106,16 +106,17 @@ def autosave(
     agent: str,
     every: Optional[int] = None,
     store: Optional[CapsuleStore] = None,
+    force: bool = False,
 ) -> Optional[ContextCapsule]:
     folder = Path(payload.get("cwd") or Path.cwd()).resolve()
     session_id = str(payload.get("session_id") or payload.get("conversationId") or folder)
-    turn = _count_turn(session_id)
+    turn = 0 if force else _count_turn(session_id)
 
     messages, tail = read_transcript(payload.get("transcript_path") or payload.get("transcriptPath"))
     reply = payload.get("last_assistant_message") or payload.get("prompt_response") or ""
     limited = hit_limit(f"{reply}\n{tail}")
     every = every or int(config_manager.get("autosave_every") or 2)
-    if turn % every and not limited:
+    if not force and turn % every and not limited:
         return None
 
     users = [t for r, t in messages if r == "user"]

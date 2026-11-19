@@ -1,3 +1,4 @@
+import base64
 import json
 import shutil
 import sys
@@ -163,19 +164,19 @@ class TestFleet(unittest.TestCase):
         with patch.object(config_manager, "get", side_effect=fake_get):
             ps_cmd = runner.build_command("claude@winbox", "fix it's bug", "/tmp")
             self.assertEqual(ps_cmd[:7], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", "user@win"])
-            self.assertIn("agent-comms busy --gate", ps_cmd[7])
-            self.assertIn("exit 75", ps_cmd[7])
-            self.assertIn("cd 'C:\\work\\it''s_here' -ErrorAction SilentlyContinue", ps_cmd[7])
-            self.assertIn("& 'claude' '-p' '--permission-mode' 'acceptEdits' 'fix it''s bug'", ps_cmd[7])
+            self.assertTrue(ps_cmd[7].startswith("agent-comms remote-run "))
+            ps_spec = json.loads(base64.b64decode(ps_cmd[7].split()[-1]))
+            self.assertEqual(ps_spec["folder"], "C:\\work\\it's_here")
+            self.assertEqual(ps_spec["cmd"], ["claude", "-p", "--permission-mode", "auto", "fix it's bug"])
 
-            sh_cmd = runner.build_command("claude@linuxbox", "fix bug", "/tmp")
+            sh_cmd = runner.build_command("claude@linuxbox", "fix bug", "/tmp", "capsule-1")
             self.assertEqual(sh_cmd[:7], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", "user@linux"])
             self.assertIn('exec "${SHELL:-sh}" -lc ', sh_cmd[7])
             self.assertIn("export PATH=", sh_cmd[7])
-            self.assertIn("agent-comms busy --gate", sh_cmd[7])
-            self.assertIn("exit 75", sh_cmd[7])
-            self.assertIn("cd ~/proj 2>/dev/null; claude -p --permission-mode acceptEdits", sh_cmd[7])
-            self.assertIn("fix bug", sh_cmd[7])
+            sh_spec = json.loads(base64.b64decode(sh_cmd[7].rstrip("'").split()[-1]))
+            self.assertEqual(sh_spec["folder"], "~/proj")
+            self.assertEqual(sh_spec["capsule"], "capsule-1")
+            self.assertEqual(sh_spec["cmd"][-1], "fix bug")
 
     def test_capacity_check(self):
         with patch.object(capacity, "cpu_percent", return_value=20.0), patch.object(
@@ -240,7 +241,7 @@ class TestFleet(unittest.TestCase):
         cwd = self.temp_dir / "work"
         cwd.mkdir(exist_ok=True)
 
-        def fake_build_command(slot, prompt, job_cwd):
+        def fake_build_command(slot, prompt, job_cwd, capsule_id=None):
             if slot == "claude@box1":
                 return [sys.executable, "-c", 'import sys; print("BUSY: test"); sys.exit(75)']
             return [sys.executable, "-c", 'print("ok")']
@@ -260,7 +261,7 @@ class TestFleet(unittest.TestCase):
                 "status": "queued",
                 "tried": [],
                 "created": time.time(),
-                "fixed_agent": False,
+                "caller": None,
             }
             runner.write_job(job)
             runner.work("job75")

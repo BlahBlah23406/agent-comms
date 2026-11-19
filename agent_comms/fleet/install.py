@@ -69,12 +69,15 @@ def write_block(path: Path, text: str):
     path.write_text(new, encoding="utf-8")
 
 
-def _set_hook(hooks: Dict[str, Any], event: str, command: str, timeout: int = 30):
+def _set_hook(hooks: Dict[str, Any], event: str, command: str, timeout: int = 30, matcher: str = ""):
     keep = [
         h for h in hooks.get(event, [])
         if "agent_comms" not in json.dumps(h) and "agent-comms" not in json.dumps(h)
     ]
-    hooks[event] = keep + [{"hooks": [{"type": "command", "command": command, "timeout": timeout}]}]
+    group: Dict[str, Any] = {"hooks": [{"type": "command", "command": command, "timeout": timeout}]}
+    if matcher:
+        group = {"matcher": matcher, **group}
+    hooks[event] = keep + [group]
 
 
 def _drop_hooks(hooks: Dict[str, Any], event: str):
@@ -89,12 +92,17 @@ def hook_command(python: str, agent: str) -> str:
     return f'"{python}" -m agent_comms.cli autosave --agent {agent}'
 
 
+def tick_command(python: str, agent: str) -> str:
+    return f'"{python}" "{Path(__file__).with_name("tick.py")}" {agent}'
+
+
 def install_claude(home: Path, python: str):
     path = home / ".claude" / "settings.json"
     data = _read_json(path)
     hooks = data.setdefault("hooks", {})
     _drop_hooks(hooks, "PreToolUse")
     _set_hook(hooks, "Stop", hook_command(python, "claude"))
+    _set_hook(hooks, "PostToolUse", tick_command(python, "claude"), matcher="*")
     _write_json(path, data)
     return path
 
@@ -103,6 +111,7 @@ def install_codex(home: Path, python: str, alias: str):
     hooks_path = home / ".codex" / "hooks.json"
     data = _read_json(hooks_path)
     _set_hook(data.setdefault("hooks", {}), "Stop", hook_command(python, "codex"))
+    _set_hook(data["hooks"], "PostToolUse", tick_command(python, "codex"), matcher="*")
     _write_json(hooks_path, data)
 
     config = home / ".codex" / "config.toml"
@@ -121,7 +130,10 @@ def install_codex(home: Path, python: str, alias: str):
 def install_agy(home: Path, python: str, alias: str):
     path = home / ".gemini" / "config" / "hooks.json"
     data = _read_json(path)
-    data["agent-comms"] = {"Stop": [{"type": "command", "command": hook_command(python, "agy"), "timeout": 30}]}
+    data["agent-comms"] = {
+        "Stop": [{"type": "command", "command": hook_command(python, "agy"), "timeout": 30}],
+        "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": tick_command(python, "agy"), "timeout": 10}]}],
+    }
     _write_json(path, data)
     subprocess.run(
         ["agy", "mcp", "add", "--env", f"AGENT_COMMS_MACHINE_ALIAS={alias}",

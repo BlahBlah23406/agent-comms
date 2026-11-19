@@ -25,6 +25,7 @@ from agent_comms.session.manager import CrossSessionManager
 class AgentCommsMCPServer:
     def __init__(self, workspace_path: Optional[Path] = None):
         self.workspace_path = workspace_path or Path.cwd()
+        self.client_name = ""
         self.store = CapsuleStore()
         self.packager = CapsulePackager(workspace_path=self.workspace_path, store=self.store)
         self.unpacker = CapsuleUnpacker(workspace_path=self.workspace_path)
@@ -223,12 +224,12 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "run_on_agents",
-                "description": "Hands tasks to other agent CLIs (claude, codex, gemini, agy, SSH hosts) in the background, picking the least used one for each. Returns job IDs right away; read results with check_jobs.",
+                "description": "Hands tasks to other agent CLIs (claude, codex, agy) on this and other machines in the background. Leave `agent` empty: each task goes to a different provider, your own provider is used last, busy machines are skipped, and a task that hits a usage limit moves to another agent by itself. Returns job IDs right away; read results with check_jobs.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "tasks": {"type": "array", "items": {"type": "string"}, "description": "One complete, self-contained instruction per helper. Give each helper different files."},
-                        "agent": {"type": "string", "description": "Optional: force one agent, e.g. codex or claude@my-server"},
+                        "agent": {"type": "string", "description": "Usually leave empty. Only to prefer one agent first, e.g. codex or claude@my-server; it still moves on if that agent fails"},
                         "folder": {"type": "string", "description": "Project folder the helpers work in (needed from chat apps)"},
                     },
                     "required": ["tasks"],
@@ -494,7 +495,12 @@ class AgentCommsMCPServer:
             from agent_comms.fleet import runner
             try:
                 folder = arguments.get("folder") or str(self.workspace_path)
-                jobs = runner.submit(arguments["tasks"], cwd=str(Path(folder).expanduser()), agent=arguments.get("agent"))
+                jobs = runner.submit(
+                    arguments["tasks"],
+                    cwd=str(Path(folder).expanduser()),
+                    agent=arguments.get("agent"),
+                    caller=runner.detect_caller(self.client_name),
+                )
             except Exception as e:
                 return json.dumps({"error": str(e)})
             return json.dumps([{"job_id": j["id"], "agent": j["agent"], "task": j["prompt"]} for j in jobs], indent=2)
@@ -546,6 +552,7 @@ class AgentCommsMCPServer:
             params = request.get("params", {})
 
             if method == "initialize":
+                self.client_name = (params.get("clientInfo") or {}).get("name", "")
                 response = {
                     "jsonrpc": "2.0",
                     "id": msg_id,
