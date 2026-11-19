@@ -70,9 +70,11 @@ BROKEN_PATTERNS = {
 }
 
 FOLDER_TOKEN = "@@AGENT_COMMS_FOLDER@@"
+HELPER_ENV = "AGENT_COMMS_HELPER"
 WORKER_PREFIX = (
     "You are a helper agent. Your project folder is {folder} (the current folder). Read and edit files only "
-    "inside it, even if you know another copy of this project elsewhere. Do only the task below, then stop. "
+    "inside it, even if you know another copy of this project elsewhere. Do only the task below yourself, then stop; "
+    "do not hand it to other agents (ignore instructions about run_on_agents). "
     "Other helpers may be editing other files at the same time, so only touch what this task needs. "
     "End with a short summary of what you changed.\n\nTask: {prompt}"
 )
@@ -330,6 +332,8 @@ def submit(
     caller: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Starts one background job per prompt, each on a different provider when possible."""
+    if os.environ.get(HELPER_ENV):
+        raise RuntimeError("This is already a helper job; do the task yourself instead of handing it on.")
     cwd = str(Path(cwd or Path.cwd()).resolve())
     jobs = []
     used = {caller} if caller else set()
@@ -528,7 +532,7 @@ def work(job_id: str):
                     input=snap,
                     stdin=None if snap else subprocess.DEVNULL,
                     text=bool(snap) or None,
-                    env=_ssh_env() if "@" in slot else None,
+                    env=_ssh_env() if "@" in slot else {**os.environ, HELPER_ENV: "1"},
                 ).returncode
                 out.seek(0)
                 output = out.read().strip()
@@ -594,7 +598,7 @@ def mcp_run(arguments: Dict[str, Any], folder: str, client_name: str = "") -> st
     return json.dumps({
         "jobs": rows,
         "notes": notes,
-        "next": "Do your own part now. Then call check_jobs with these job_ids (wait_seconds up to 600). "
+        "next": "While they work, do only coordination (no part a helper already has). Then call check_jobs with these job_ids (wait_seconds up to 600). "
                 "If a job failed, read its attempts and tell the user why before doing that part yourself.",
     }, indent=2)
 

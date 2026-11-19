@@ -242,7 +242,7 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "run_on_agents",
-                "description": "Hands tasks to other agent CLIs (claude, codex, agy) on this and other machines in the background, so one subscription doesn't pay for everything. Leave `agent` empty: each task goes to a different provider, your own provider is used last, busy machines are skipped, and a task that fails or hits a usage limit moves to another agent by itself. Returns job IDs right away; do your own part meanwhile, then read results with check_jobs.",
+                "description": "Hands tasks to other agent CLIs (claude, codex, agy) on this and other machines in the background, so one subscription doesn't pay for everything. For any task bigger than a few minutes, helpers should do most (70-80%) of the work: give them every implementation and research part and keep only planning, review and final testing. Leave `agent` empty: each task goes to a different provider, your own provider is used last, busy machines are skipped, and a task that fails or hits a usage limit moves to another agent by itself. Returns job IDs right away; do your own part meanwhile, then read results with check_jobs.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

@@ -44,10 +44,11 @@ def _git(folder: Path, *args: str, check: bool = False) -> subprocess.CompletedP
 
 def _run(cmd: list, cwd: Path, timeout: int) -> tuple[str, int]:
     cmd = [shutil.which(cmd[0]) or cmd[0], *cmd[1:]]
+    env = {**os.environ, "AGENT_COMMS_HELPER": "1"}
     with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out:
         try:
             code = subprocess.run(cmd, cwd=cwd, stdout=out, stderr=subprocess.STDOUT,
-                                  stdin=subprocess.DEVNULL, timeout=timeout).returncode
+                                  stdin=subprocess.DEVNULL, timeout=timeout, env=env).returncode
         except subprocess.TimeoutExpired:
             code = -1
         out.seek(0)
