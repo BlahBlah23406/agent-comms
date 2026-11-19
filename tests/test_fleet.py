@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import multiprocessing
 import os
 import shutil
 import subprocess
@@ -13,8 +14,16 @@ from unittest.mock import MagicMock, patch
 
 from agent_comms.capsule.store import CapsuleStore
 from agent_comms.config import config_manager
-from agent_comms.fleet import capacity, remote, runner, tick
+from agent_comms.fleet import capacity, install, remote, runner, tick
 from agent_comms.fleet.autosave import autosave, read_transcript
+
+
+def _record_runs_in_process(config_dir, start, count):
+    with patch.object(config_manager, "config_dir", Path(config_dir)):
+        if not start.wait(10):
+            raise RuntimeError("Timed out waiting for concurrent writers")
+        for _ in range(count):
+            runner._record_run("claude@box")
 
 
 class TestFleet(unittest.TestCase):
@@ -386,6 +395,231 @@ class TestFleet(unittest.TestCase):
             self.assertEqual(final_job["status"], "done")
             self.assertEqual(final_job["exit_code"], 0)
             self.assertEqual(final_job["tried"], ["claude@box1", "codex@box2"])
+
+    def test_capacity_counts_only_live_local_and_incoming_jobs(self):
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "_alive", side_effect=lambda pid: pid in (101, 102)
+        ):
+            for job_id, status, agent, pid in (
+                ("local", "running", "claude", 101),
+                ("dead", "running", "codex", 999),
+                ("remote", "running", "claude@box", 101),
+                ("queued", "queued", "claude", 101),
+                ("done", "done", "codex", 101),
+                ("no-pid", "running", "claude", None),
+            ):
+                runner.write_job({"id": job_id, "status": status, "agent": agent, "pid": pid})
+            jobs_dir = self.temp_dir / "jobs"
+            (jobs_dir / "invalid.json").write_text("not json", encoding="utf-8")
+            live_marker = jobs_dir / "incoming-102.pid"
+            dead_marker = jobs_dir / "incoming-999.pid"
+            live_marker.touch()
+            dead_marker.touch()
+
+            self.assertEqual(capacity.running_agents(), 2)
+            self.assertTrue(live_marker.exists())
+            self.assertFalse(dead_marker.exists())
+            self.assertEqual(capacity.running_agents(), 2)
+
+    def test_runner_ssh_env_recovers_launchd_socket_only_when_missing(self):
+        with patch.dict(os.environ, {"PATH": "/test/bin"}, clear=True), patch.object(
+            runner.platform, "system", return_value="Darwin"
+        ), patch.object(runner.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, stdout=" /tmp/launchd.sock\n")
+            env = runner._ssh_env()
+            self.assertEqual(env["SSH_AUTH_SOCK"], "/tmp/launchd.sock")
+            self.assertEqual(env["PATH"], "/test/bin")
+            self.assertNotIn("SSH_AUTH_SOCK", os.environ)
+            run.assert_called_once_with(
+                ["launchctl", "getenv", "SSH_AUTH_SOCK"], capture_output=True, text=True, timeout=5
+            )
+
+        with patch.dict(os.environ, {"SSH_AUTH_SOCK": "/tmp/existing.sock"}, clear=True), patch.object(
+            runner.platform, "system", return_value="Darwin"
+        ), patch.object(runner.subprocess, "run") as run:
+            self.assertEqual(runner._ssh_env()["SSH_AUTH_SOCK"], "/tmp/existing.sock")
+            run.assert_not_called()
+
+    def test_runner_work_rests_unreachable_host_and_finishes_on_next_slot(self):
+        now = 10000
+        slots = ["claude@offline", "codex@offline", "agy@online"]
+
+        def fake_run(command, **kwargs):
+            failed = command == [slots[0]]
+            kwargs["stdout"].write("ssh: connection refused" if failed else "finished")
+            return subprocess.CompletedProcess(command, 255 if failed else 0)
+
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            config_manager, "get", return_value=None
+        ), patch.object(runner, "available_slots", return_value=slots), patch.object(
+            runner.time, "time", return_value=now
+        ), patch.object(runner, "_share_state", return_value=None), patch.object(
+            remote, "snapshot", return_value=None
+        ), patch.object(runner, "_ssh_env", return_value={}), patch.object(
+            runner, "build_command", side_effect=lambda slot, *args, **kwargs: [slot]
+        ), patch.object(runner.subprocess, "run", side_effect=fake_run) as run:
+            runner.write_job({
+                "id": "unreachable", "prompt": "test", "agent": slots[0],
+                "cwd": str(self.temp_dir), "status": "queued", "tried": [], "created": now,
+            })
+            runner.work("unreachable")
+            job = runner.read_job("unreachable")
+            usage = runner.load_usage()
+
+            self.assertEqual(job["status"], "done")
+            self.assertEqual(job["exit_code"], 0)
+            self.assertEqual(job["agent"], slots[2])
+            self.assertEqual(job["output"], "finished")
+            self.assertEqual(job["tried"], slots)
+            self.assertEqual(job["attempts"], [{
+                "agent": slots[0], "exit_code": 255, "error": "ssh: connection refused",
+            }])
+            self.assertEqual(usage["cooldown"], {
+                slot: now + runner.UNREACHABLE_SECONDS for slot in slots[:2]
+            })
+            self.assertEqual(usage["runs"][slots[2]], [now])
+            self.assertEqual([call.args[0] for call in run.call_args_list], [[slots[0]], [slots[2]]])
+
+    def test_runner_work_zero_exit_sandbox_error_is_failed_and_explained(self):
+        now = 10000
+        output = "bwrap: setting up uid map: Operation not permitted"
+
+        def fake_run(command, **kwargs):
+            kwargs["stdout"].write(output)
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            config_manager, "get", return_value=None
+        ), patch.object(runner, "available_slots", return_value=["codex"]), patch.object(
+            runner.time, "time", return_value=now
+        ), patch.object(runner, "build_command", return_value=["fake-codex"]), patch.object(
+            runner.subprocess, "run", side_effect=fake_run
+        ):
+            runner.write_job({
+                "id": "sandbox", "prompt": "test", "agent": "codex",
+                "cwd": str(self.temp_dir), "status": "queued", "tried": [], "created": now,
+            })
+            runner.work("sandbox")
+            job = runner.read_job("sandbox")
+            usage = runner.load_usage()
+            self.assertEqual(job["status"], "failed")
+            self.assertEqual(job["exit_code"], 1)
+            self.assertEqual(job["attempts"], [{"agent": "codex", "exit_code": 1, "error": output}])
+            self.assertEqual(usage["cooldown"]["codex"], now + runner.BROKEN_SECONDS)
+            self.assertIn("sandbox", usage["reason"]["codex"])
+            row, = runner.status()
+            self.assertIsNotNone(row["resting_until"])
+            self.assertEqual(row["why"], usage["reason"]["codex"])
+
+    def test_runner_submit_own_provider_uses_another_and_explains(self):
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "available_slots", return_value=["claude", "codex"]
+        ), patch.object(capacity, "check", return_value={"busy": False}), patch.object(
+            runner.subprocess, "Popen"
+        ) as popen:
+            job, = runner.submit(["test"], cwd=str(self.temp_dir), caller="claude", agent="claude")
+            self.assertEqual(job["agent"], "codex")
+            self.assertEqual(job["caller"], "claude")
+            self.assertIn("own provider", job["note"])
+            self.assertIn("other providers go first", job["note"])
+            self.assertEqual(runner.read_job(job["id"]), job)
+            popen.assert_called_once()
+
+    def test_runner_check_stale_fails_running_job_with_dead_pid(self):
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "_alive", return_value=False
+        ) as alive, patch.object(runner.time, "time", return_value=10000):
+            job = {"id": "stale", "status": "running", "pid": 999, "output": "partial output"}
+            runner.write_job(job)
+            result = runner._check_stale(job)
+            alive.assert_called_once_with(999)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["exit_code"], -1)
+            self.assertEqual(result["finished"], 10000)
+            self.assertIn("partial output", result["output"])
+            self.assertIn("helper process stopped", result["output"])
+            self.assertEqual(runner.read_job("stale"), result)
+
+    def test_runner_pick_adds_provider_runs_across_hosts(self):
+        now = time.time()
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "available_slots", return_value=["claude@a", "claude@b", "codex@a"]
+        ):
+            runner.save_usage({"runs": {
+                "claude@a": [now], "claude@b": [now] * 4, "codex@a": [now] * 3,
+            }, "cooldown": {}})
+            self.assertEqual(runner.pick(), "codex@a")
+
+    def test_remote_snapshot_round_trip_includes_untracked_excludes_ignored(self):
+        workspace = self.temp_dir / "workspace"
+        workspace.mkdir()
+        with patch.object(config_manager, "config_dir", self.temp_dir):
+            remote._git(workspace, "init", "-q", check=True)
+            (workspace / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+            (workspace / "tracked.txt").write_text("original\n", encoding="utf-8")
+            remote._git(workspace, "add", "-A", check=True)
+            remote._git(workspace, "commit", "-qm", "initial", check=True)
+            (workspace / "tracked.txt").write_text("edited\n", encoding="utf-8")
+            (workspace / "untracked.txt").write_text("new file\n", encoding="utf-8")
+            (workspace / "ignored.txt").write_text("ignored\n", encoding="utf-8")
+
+            data = remote.snapshot(workspace)
+            self.assertIsNotNone(data)
+            tree = remote._snapshot_tree(data)
+            self.assertIsNotNone(tree)
+            self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+            self.assertNotEqual(tree, workspace)
+            self.assertEqual((tree / "tracked.txt").read_text(), "edited\n")
+            self.assertEqual((tree / "untracked.txt").read_text(), "new file\n")
+            self.assertEqual((tree / ".gitignore").read_text(), "ignored.txt\n")
+            self.assertFalse((tree / "ignored.txt").exists())
+            self.assertEqual(remote._git(tree, "status", "--porcelain", check=True).stdout, "")
+            self.assertEqual(remote._git(tree, "show", "HEAD:untracked.txt", check=True).stdout, "new file\n")
+
+    def test_install_codex_server_options_once_and_idempotent(self):
+        text = (
+            '[mcp_servers.other]\ncommand = "other"\n\n'
+            '[mcp_servers.agent-comms]\ncommand = "python"\n'
+            '[mcp_servers.agent-comms.env]\nAGENT_COMMS_MACHINE_ALIAS = "test"\n'
+        )
+        for existing in ([], install.CODEX_OPTIONS[:1], install.CODEX_OPTIONS[1:], install.CODEX_OPTIONS):
+            with self.subTest(existing=existing):
+                before = text.replace(
+                    '[mcp_servers.agent-comms]\n',
+                    '[mcp_servers.agent-comms]\n' + ''.join(option + '\n' for option in existing),
+                )
+                result = install.codex_server_options(before)
+                self.assertEqual(install.codex_server_options(result), result)
+                body = result.split('[mcp_servers.agent-comms]\n')[1].split('\n[')[0]
+                for option in install.CODEX_OPTIONS:
+                    self.assertEqual(result.count(option), 1)
+                    self.assertIn(option, body)
+                self.assertIn('[mcp_servers.other]\ncommand = "other"', result)
+                self.assertIn('[mcp_servers.agent-comms.env]\nAGENT_COMMS_MACHINE_ALIAS = "test"', result)
+
+    def test_runner_record_run_preserves_all_runs_from_three_processes(self):
+        context = multiprocessing.get_context("spawn")
+        start = context.Event()
+        processes = [context.Process(
+            target=_record_runs_in_process, args=(str(self.temp_dir), start, 20)
+        ) for _ in range(3)]
+        try:
+            for process in processes:
+                process.start()
+            start.set()
+            for process in processes:
+                process.join(timeout=20)
+                self.assertEqual(process.exitcode, 0)
+            with patch.object(config_manager, "config_dir", self.temp_dir):
+                runs = runner.load_usage()["runs"]["claude@box"]
+                self.assertEqual(len(runs), 60)
+                self.assertTrue(all(isinstance(timestamp, (int, float)) for timestamp in runs))
+                self.assertFalse((self.temp_dir / "fleet_usage.lock").exists())
+        finally:
+            for process in processes:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=5)
 
 
 if __name__ == "__main__":

@@ -468,7 +468,7 @@ def _share_state(job: Dict[str, Any]) -> Optional[str]:
     return capsule.capsule_id
 
 
-def _take_patch(job: Dict[str, Any], output: str) -> str:
+def _take_patch(job: Dict[str, Any], output: str, apply: bool = True) -> str:
     """Pulls the helper's patch out of the output and applies it to the local project."""
     if remote.PATCH_START not in output:
         return output
@@ -477,6 +477,8 @@ def _take_patch(job: Dict[str, Any], output: str) -> str:
     patch = patch.lstrip("\n")
     patch_file = _data_dir() / f"{job['id']}.patch"
     patch_file.write_text(patch, encoding="utf-8")
+    if not apply:
+        return f"{before.rstrip()}\n{after.strip()}\n(this attempt failed, so its changes were not applied; patch saved at {patch_file})".strip()
     res = subprocess.run(["git", "apply", "--whitespace=nowarn", str(patch_file)], cwd=job["cwd"], capture_output=True, text=True)
     if res.returncode != 0:
         res = subprocess.run(["git", "apply", "--3way", "--whitespace=nowarn", str(patch_file)], cwd=job["cwd"], capture_output=True, text=True)
@@ -530,12 +532,14 @@ def work(job_id: str):
         except Exception as e:
             output, code = str(e), -1
 
-        if "@" in slot:
-            output = _take_patch(job, output)
-        job.update(output=output[-MAX_OUTPUT:], exit_code=code, finished=time.time())
         limited = hit_limit(output[-2000:])
         broken = broken_reason(output[-6000:])
-        if not limited and not broken and code in (0, -1):
+        accepted = not limited and not broken and code in (0, -1)
+        if "@" in slot:
+            # Only the attempt we keep may change the project; the next agent redoes a failed one.
+            output = _take_patch(job, output, apply=accepted)
+        job.update(output=output[-MAX_OUTPUT:], exit_code=code, finished=time.time())
+        if accepted:
             break
         if broken and code == 0:
             job["exit_code"] = code = 1

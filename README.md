@@ -63,7 +63,7 @@ agent-comms config set autosave_every 3
 
 ## Sharing Work Across Agents
 
-When a big task splits into independent parts, `agent-comms` can hand those parts out to other agent CLIs in the background. When possible, each task goes to a different provider, and the agent asking for help uses its own provider last so one subscription doesn't pay for everything. It picks the least-used CLI in the last 5 hours. A usage-limit message like "session limit" rests that agent for an hour and moves the task to another agent.
+When a big task splits into independent parts, `agent-comms` can hand those parts out to other agent CLIs in the background. When possible, each task goes to a different provider, and the agent asking for help uses its own provider last so one subscription doesn't pay for everything. It picks the least-used CLI in the last 5 hours. A usage-limit message like "session limit" rests that agent for an hour and moves the task to another agent. Agents whose sandbox can't start or that aren't logged in on a machine rest 6 hours, and `agent-comms agents` shows why. If a machine can't be reached over SSH, only that machine rests 5 minutes. If every agent tried fails, the failed task lists what each agent hit.
 
 Check which agent CLIs are installed and how many times each ran in the last 5 hours:
 ```bash
@@ -74,7 +74,7 @@ Hand tasks to other agents in the background (or add `--wait` to wait for result
 ```bash
 agent-comms run "task one" "task two"
 ```
-Use `--agent <slot>` to pick who goes first; it still moves on to another agent if that one fails.
+Use `--agent <slot>` (or `agent` in `run_on_agents`) to pick who goes first; naming your own provider is ignored while other providers are free, and it still moves on to another agent if that one fails.
 
 Check background jobs or read the output of one job:
 ```bash
@@ -82,13 +82,13 @@ agent-comms jobs
 agent-comms jobs <id>
 ```
 
-Inside an agent chat, the agent can use the MCP tools `save_progress`, `run_on_agents`, `check_jobs`, `agent_status`, and `resume_latest` to do the same work.
+Inside an agent chat, the agent can use the MCP tools `save_progress`, `run_on_agents`, `check_jobs`, `agent_status`, and `resume_latest` to do the same work. For Codex, the installer adds `env_vars = ["SSH_AUTH_SOCK"]` and `tool_timeout_sec = 900` to the `agent-comms` MCP server entry.
 
-**Permissions:** By default, helpers run in each CLI's auto mode: `claude --permission-mode auto`, `agy --mode auto`, or Codex's `workspace-write` sandbox. They can run builds and tests while risky actions are still checked. Set `fleet_permissions` to `full` to skip all checks for all helpers:
+**Permissions:** By default, helpers run in each CLI's auto mode: `claude --permission-mode auto`, `agy --mode auto`, or Codex's `workspace-write` sandbox (with network access enabled for Codex helpers). They can run builds and tests while risky actions are still checked. Set `fleet_permissions` to `full` to skip all checks for all helpers:
 ```bash
 agent-comms config set fleet_permissions full
 ```
-Or use `fleet_full_agents` to skip all checks for only the providers you list. Only enable these settings in projects you trust.
+Or use `fleet_full_agents` to skip all checks for only the providers you list, or add a per-host `full_agents` list inside `fleet_hosts` to run those agents without permission checks on that host only. Only enable these settings in projects you trust.
 
 **Ollama:** By default, the helper list is `claude`, `codex`, `agy`. Local or cloud Ollama models are only used when you add `ollama` to the agent list:
 ```bash
@@ -100,13 +100,13 @@ agent-comms config set ollama_model <model>
 ```bash
 agent-comms fleet add-host my-server --ssh me@192.168.1.20 --dir ~/myproject --agents claude,codex
 ```
-Add `--powershell` if the remote machine runs Windows. The folder on that machine (`--dir`) must already have the project. Remove a host with `agent-comms fleet remove-host <name>`.
+Add `--powershell` if the remote machine runs Windows. Remove a host with `agent-comms fleet remove-host <name>`.
 
-Helpers on other machines start from your project's current state in a throwaway copy. Their file changes come back and are applied to your project automatically. If a patch cannot be applied, it is saved for you to check.
+Helpers on other machines start from your project's current state in a throwaway copy. Machines without a copy of the project get a snapshot of it (tracked and new files, up to 50 MB). Their file changes come back as a patch and are applied to your project automatically. If a patch cannot be applied, it is saved for you to check.
 
 Each machine's CLIs must be logged in for SSH use too; on macOS the keychain is locked over SSH, so use `claude setup-token` and set `CLAUDE_CODE_OAUTH_TOKEN`.
 
-**Busy machines say no:** before a machine takes a helper job, it checks itself. If it is too busy, the job goes to another agent and that machine is skipped for 10 minutes. See how a machine is doing with:
+**Busy machines say no:** before a machine takes a helper job, it checks itself. Busy counts helper jobs running on that machine (agent apps and open chats don't count). If it is too busy, the job goes to another agent and that machine is skipped for 10 minutes. See how a machine is doing with:
 ```bash
 agent-comms busy
 ```
@@ -114,7 +114,7 @@ Change the limits on each machine (these are the defaults):
 ```bash
 agent-comms config set cap_cpu_percent 85      # too busy above this CPU use
 agent-comms config set cap_min_free_mb 1024    # too busy below this much free memory
-agent-comms config set cap_running_agents 6    # too busy when this many agent CLIs are running (yours count too)
+agent-comms config set cap_running_agents 4    # too busy when this many helper jobs are running on this machine
 agent-comms config set accept_work false       # never take helper jobs (set to true to turn back on)
 ```
 

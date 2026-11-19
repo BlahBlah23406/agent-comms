@@ -20,6 +20,8 @@ from agent_comms.quota.watchdog import RATE_LIMIT_PATTERNS
 
 KEEP_LOCAL = 5
 MAX_SESSIONS = 200
+# Instruction files and IDE context the CLIs send as if the user typed them.
+INJECTED = re.compile(r"#\s*(AGENTS\.md|CLAUDE\.md|GEMINI\.md) instructions|# Context from my IDE", re.I)
 ROLES = {"gemini": "assistant", "model": "assistant", "USER_INPUT": "user", "PLANNER_RESPONSE": "assistant"}
 
 
@@ -53,7 +55,7 @@ def _message(obj: Any) -> Optional[Tuple[str, str]]:
     text = _text(msg.get("content"))
     request = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", text, re.S)
     text = (request.group(1) if request else text).strip()
-    if not text or text.startswith("<"):
+    if not text or text.startswith("<") or (role == "user" and INJECTED.match(text)):
         return None
     return role, text
 
@@ -124,6 +126,11 @@ def autosave(
         reply = next((t for r, t in reversed(messages) if r == "assistant"), "")
     first = users[0] if users else "Unknown goal"
     last = payload.get("prompt") or payload.get("lastUserInput") or (users[-1] if users else first)
+    if len(last) < 40:
+        # "continue" alone says nothing; add the last real request.
+        earlier = next((u for u in reversed(users) if len(u) >= 40 and u != first), "")
+        if earlier:
+            last = f"{last} (earlier request: {earlier[:600]})"
 
     capsule = CapsulePackager(workspace_path=folder).package(
         task_id=task_id_for(folder),
