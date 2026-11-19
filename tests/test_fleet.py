@@ -189,8 +189,9 @@ class TestFleet(unittest.TestCase):
             jobs = runner.submit(prompts, cwd=str(self.temp_dir), caller="claude")
 
             self.assertEqual(len(jobs), 3)
-            self.assertEqual({job["agent"] for job in jobs}, {"claude", "codex", "agy"})
-            self.assertNotEqual(jobs[0]["agent"], "claude")
+            # The caller's own provider is kept free while others can take work; the rest take turns.
+            self.assertEqual({job["agent"] for job in jobs}, {"codex", "agy"})
+            self.assertNotEqual(jobs[0]["agent"], jobs[1]["agent"])
             self.assertEqual([job["prompt"] for job in jobs], prompts)
             self.assertTrue(all(job["caller"] == "claude" for job in jobs))
             self.assertEqual(popen.call_count, 3)
@@ -296,7 +297,7 @@ class TestFleet(unittest.TestCase):
             ps_cmd = runner.build_command("claude@winbox", "fix it's bug", "/tmp")
             self.assertEqual(ps_cmd[:9], ["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "LogLevel=ERROR", "user@win"])
             self.assertTrue(ps_cmd[9].startswith("agent-comms remote-run "))
-            ps_spec = json.loads(base64.b64decode(ps_cmd[9].split()[-1]))
+            ps_spec = json.loads(base64.b64decode(ps_cmd[9].split("remote-run ")[1].split(";")[0]))
             self.assertEqual(ps_spec["folder"], "C:\\work\\it's_here")
             self.assertEqual(ps_spec["cmd"], ["claude", "-p", "--permission-mode", "auto", "fix it's bug"])
 

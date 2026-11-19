@@ -279,8 +279,10 @@ def status() -> List[Dict[str, Any]]:
     return rows
 
 
-def pick(exclude: Optional[List[str]] = None, avoid: Optional[set] = None) -> Optional[str]:
-    """Least-used free slot, trying providers in `avoid` (e.g. the caller's own) last."""
+def pick(exclude: Optional[List[str]] = None, avoid: Optional[set] = None,
+         batch: Optional[Dict[str, int]] = None) -> Optional[str]:
+    """Least-used free slot. Providers in `avoid` (the caller's own) go last; within a batch,
+    providers take turns (`batch` counts what each already got)."""
     rows = [r for r in status() if not r["resting_until"] and r["agent"] not in (exclude or [])]
     if any("@" not in r["agent"] for r in rows) and capacity.check()["busy"]:
         rows = [r for r in rows if "@" in r["agent"]]
@@ -299,7 +301,7 @@ def pick(exclude: Optional[List[str]] = None, avoid: Optional[set] = None) -> Op
 
     def rank(r):
         provider = r["agent"].partition("@")[0]
-        return (provider in avoid, by_provider[provider], load(r))
+        return (provider in avoid, (batch or {}).get(provider, 0), by_provider[provider], load(r))
     return min(rows, key=rank)["agent"]
 
 
@@ -343,7 +345,8 @@ def build_command(slot: str, prompt: str, cwd: str, capsule_id: Optional[str] = 
         "timeout": int(config_manager.get("fleet_timeout") or 1800),
     })
     if host.get("shell") == "powershell":
-        remote_cmd = f"agent-comms remote-run {spec}"
+        # PowerShell turns a native exit code into 1 unless it is passed on.
+        remote_cmd = f"agent-comms remote-run {spec}; exit $LASTEXITCODE"
     else:
         script = f'export PATH="$PATH:{PATH_DIRS}"; agent-comms remote-run {spec}'
         remote_cmd = f'exec "${{SHELL:-sh}}" -lc {shlex.quote(script)}'
@@ -363,6 +366,7 @@ def submit(
     cwd = str(Path(cwd or Path.cwd()).resolve())
     jobs = []
     used = {caller} if caller else set()
+    batch: Dict[str, int] = {}
     note = None
     if agent and caller and agent.partition("@")[0] == caller:
         other = pick(avoid=used)
@@ -371,7 +375,7 @@ def submit(
             note = f"'{agent}' is your own provider, so other providers go first; it is still used if they fail."
             agent = None
     for prompt in prompts:
-        slot = agent or pick(avoid=used)
+        slot = agent or pick(avoid=used, batch=batch)
         if not slot:
             raise RuntimeError("No agent CLIs are available right now (none installed, or all resting).")
         job = {
@@ -387,7 +391,7 @@ def submit(
         }
         if note:
             job["note"] = note
-        used.add(slot.partition("@")[0])
+        batch[slot.partition("@")[0]] = batch.get(slot.partition("@")[0], 0) + 1
         _record_run(slot)
         write_job(job)
         subprocess.Popen(
@@ -568,6 +572,8 @@ def work(job_id: str):
             output, code = str(e), -1
 
         _record_minutes(slot, time.time() - job["started"])
+        if "@" in slot and output.startswith("BUSY:"):
+            code = BUSY_EXIT
         limited = bool(HELPER_LIMIT.search(output[-1500:]))
         broken = broken_reason(output[-6000:])
         if TIMED_OUT.search(output[-1500:]) and code == 0:
