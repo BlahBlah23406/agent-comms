@@ -804,6 +804,138 @@ class TestFleet(unittest.TestCase):
             popen.assert_not_called()
             self.assertFalse((self.temp_dir / "jobs").exists())
 
+    def test_runner_submit_four_prompts_avoids_caller_and_alternates_codex_agy(self):
+        prompts = ["task 1", "task 2", "task 3", "task 4"]
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "available_slots", return_value=["claude", "codex", "agy"]
+        ), patch.object(runner.capacity, "check", return_value={"busy": False}), patch.object(
+            runner.subprocess, "Popen"
+        ):
+            jobs = runner.submit(prompts, cwd=str(self.temp_dir), caller="claude")
+            agents = [job["agent"] for job in jobs]
+            self.assertNotIn("claude", agents)
+            self.assertEqual(agents, ["codex", "agy", "codex", "agy"])
+
+    def test_runner_pick_respects_host_max_jobs_default_and_configured(self):
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "available_slots", return_value=["claude@box"]
+        ), patch.object(runner.capacity, "check", return_value={"busy": False}):
+            runner.write_job({"id": "j1", "agent": "claude@box", "status": "queued"})
+            runner.write_job({"id": "j2", "agent": "codex@box", "status": "queued"})
+
+            with patch.object(
+                config_manager, "get",
+                side_effect=lambda k, default=None: [{"name": "box", "agents": ["claude"]}] if k == "fleet_hosts" else default,
+            ):
+                self.assertIsNone(runner.pick())
+
+            with patch.object(
+                config_manager, "get",
+                side_effect=lambda k, default=None: [{"name": "box", "agents": ["claude"], "max_jobs": 3}] if k == "fleet_hosts" else default,
+            ):
+                self.assertEqual(runner.pick(), "claude@box")
+
+    def test_capacity_check_reserves_memory_per_running_job(self):
+        with patch.object(capacity, "cpu_percent", return_value=10.0), patch.object(
+            capacity, "free_memory_mb", return_value=1700.0
+        ), patch.object(capacity, "running_agents", return_value=2), patch.object(
+            config_manager, "get", return_value=None
+        ):
+            res = capacity.check()
+            self.assertTrue(res["busy"])
+            self.assertIn("free memory", res["reason"])
+            self.assertIn("2 helper jobs running", res["reason"])
+
+        with patch.object(capacity, "cpu_percent", return_value=10.0), patch.object(
+            capacity, "free_memory_mb", return_value=1900.0
+        ), patch.object(capacity, "running_agents", return_value=2), patch.object(
+            config_manager, "get", return_value=None
+        ):
+            res = capacity.check()
+            self.assertFalse(res["busy"])
+            self.assertIsNone(res["reason"])
+
+    def test_remote_run_admits_when_free_and_skips_marker_when_busy(self):
+        encoded = remote.encode({"cmd": ["claude", "-p", "hi"], "folder": str(self.temp_dir)})
+        marker = self.temp_dir / "jobs" / f"incoming-{os.getpid()}.pid"
+
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            capacity, "check", return_value={"busy": True, "reason": "too busy"}
+        ), patch.object(remote, "_run_here") as run_here, patch.object(
+            sys, "stdout", new_callable=io.StringIO
+        ) as out:
+            self.assertEqual(remote.run(encoded), remote.BUSY_EXIT)
+            run_here.assert_not_called()
+            self.assertFalse(marker.exists())
+            self.assertIn("BUSY: too busy", out.getvalue())
+
+        seen_during_run = []
+
+        def fake_run_here(spec):
+            seen_during_run.append(marker.exists())
+            return 0
+
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            capacity, "check", return_value={"busy": False, "reason": None}
+        ), patch.object(remote, "_run_here", side_effect=fake_run_here):
+            self.assertEqual(remote.run(encoded), 0)
+            self.assertEqual(seen_during_run, [True])
+            self.assertFalse(marker.exists())
+
+    def test_runner_work_treats_busy_prefix_with_exit_1_as_busy_host(self):
+        now = 10000
+        slots = ["claude@busybox", "codex@busybox", "agy@freebox"]
+
+        def fake_run(command, **kwargs):
+            is_busy = command == [slots[0]]
+            kwargs["stdout"].write("BUSY: memory low\n" if is_busy else "done")
+            return subprocess.CompletedProcess(command, 1 if is_busy else 0)
+
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            config_manager, "get", return_value=None
+        ), patch.object(runner, "available_slots", return_value=slots), patch.object(
+            runner.time, "time", return_value=now
+        ), patch.object(runner, "_share_state", return_value=None), patch.object(
+            remote, "snapshot", return_value=None
+        ), patch.object(runner, "_ssh_env", return_value={}), patch.object(
+            runner, "build_command", side_effect=lambda slot, *args, **kwargs: [slot]
+        ), patch.object(runner.subprocess, "run", side_effect=fake_run):
+            runner.write_job({
+                "id": "busy1", "prompt": "test", "agent": slots[0],
+                "cwd": str(self.temp_dir), "status": "queued", "tried": [], "created": now,
+            })
+            runner.work("busy1")
+            job = runner.read_job("busy1")
+            usage = runner.load_usage()
+
+            self.assertEqual(job["status"], "done")
+            self.assertEqual(job["agent"], "agy@freebox")
+            self.assertEqual(job["attempts"], [{
+                "agent": "claude@busybox", "exit_code": runner.BUSY_EXIT, "error": "BUSY: memory low",
+            }])
+            self.assertEqual(usage["cooldown"], {
+                "claude@busybox": now + runner.BUSY_SECONDS,
+                "codex@busybox": now + runner.BUSY_SECONDS,
+            })
+
+    def test_runner_helper_limit_matches_start_of_line_not_quoted_mid_line(self):
+        self.assertIsNotNone(runner.HELPER_LIMIT.search("■ You’ve hit your usage limit. Upgrade to Pro"))
+        self.assertIsNotNone(runner.HELPER_LIMIT.search("You've hit your session limit · resets 5:50pm"))
+        self.assertIsNone(
+            runner.HELPER_LIMIT.search(
+                "The helper checked whether 'You've hit your session limit · resets 5:50pm' matches."
+            )
+        )
+
+    def test_build_command_powershell_ends_with_exit_lastexitcode(self):
+        hosts = [{"name": "winbox", "ssh": "user@win", "dir": "C:\\work", "shell": "powershell"}]
+        with patch.object(
+            config_manager, "get",
+            side_effect=lambda k, default=None: hosts if k == "fleet_hosts" else default,
+        ):
+            cmd = runner.build_command("claude@winbox", "run tests", "/tmp")
+            self.assertTrue(cmd[-1].endswith("; exit $LASTEXITCODE"))
+
 
 if __name__ == "__main__":
     unittest.main()
