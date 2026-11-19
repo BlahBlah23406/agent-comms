@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -52,6 +53,7 @@ DEFAULT_AGENTS = ["claude", "codex", "agy"]
 WINDOW_SECONDS = 5 * 3600
 COOLDOWN_SECONDS = 3600
 FAILED_SECONDS = 600
+BROKEN_SECONDS = 6 * 3600
 UNREACHABLE_SECONDS = 300
 BUSY_SECONDS = 600
 SSH_FAILED = 255
@@ -59,6 +61,12 @@ BUSY_EXIT = remote.BUSY_EXIT
 PATH_DIRS = "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
 EXTRA_DIRS = [str(Path.home() / ".local" / "bin"), "/opt/homebrew/bin", "/usr/local/bin"]
 MAX_OUTPUT = 20000
+
+# The agent started but can't work at all on that machine (exit code is often still 0).
+BROKEN_PATTERNS = {
+    "its sandbox can't start there": re.compile(r"bwrap: |Failed to create unified exec process|sandbox (?:setup|initiali[sz]ation) failed", re.I),
+    "it isn't logged in there": re.compile(r"Waiting for authentication|authentication (?:timed out|failed)|Please run /login|not logged in|Invalid API key", re.I),
+}
 
 WORKER_PREFIX = (
     "You are a helper agent working in the current project folder. Do only the task below, then stop. "
@@ -198,10 +206,24 @@ def _record_run(slot: str):
     _change_usage(change)
 
 
-def _cool_down(slot: str, seconds: int = COOLDOWN_SECONDS):
+def _cool_down(slot: str, seconds: int = COOLDOWN_SECONDS, reason: Optional[str] = None):
     def change(usage):
-        usage["cooldown"][slot] = max(usage["cooldown"].get(slot, 0), time.time() + seconds)
+        until = time.time() + seconds
+        if until < usage["cooldown"].get(slot, 0):
+            return
+        usage["cooldown"][slot] = until
+        if reason:
+            usage.setdefault("reason", {})[slot] = reason
+        else:
+            usage.get("reason", {}).pop(slot, None)
     _change_usage(change)
+
+
+def broken_reason(output: str) -> Optional[str]:
+    for reason, pattern in BROKEN_PATTERNS.items():
+        if pattern.search(output):
+            return reason
+    return None
 
 
 def available_slots() -> List[str]:
@@ -220,11 +242,14 @@ def status() -> List[Dict[str, Any]]:
     for slot in available_slots():
         runs = [t for t in usage["runs"].get(slot, []) if now - t < WINDOW_SECONDS]
         cool = usage["cooldown"].get(slot, 0)
-        rows.append({
+        row = {
             "agent": slot,
             "runs_last_5h": len(runs),
             "resting_until": time.strftime("%H:%M", time.localtime(cool)) if cool > now else None,
-        })
+        }
+        if cool > now and usage.get("reason", {}).get(slot):
+            row["why"] = usage["reason"][slot]
+        rows.append(row)
     return rows
 
 
@@ -268,13 +293,17 @@ def _same_folder(cwd: str) -> str:
 
 def build_command(slot: str, prompt: str, cwd: str, capsule_id: Optional[str] = None, snapshot: bool = False) -> List[str]:
     agent, _, host_name = slot.partition("@")
-    full = config_manager.get("fleet_permissions") == "full" or agent in (config_manager.get("fleet_full_agents") or [])
+    host = _host(host_name) if host_name else {}
+    full = (
+        config_manager.get("fleet_permissions") == "full"
+        or agent in (config_manager.get("fleet_full_agents") or [])
+        or agent in host.get("full_agents", [])
+    )
     mode = "full" if full else "auto"
     model = config_manager.get("ollama_model") or "gpt-oss:120b-cloud"
     cmd = [part.format(prompt=prompt, model=model) for part in COMMANDS[agent][mode]]
     if not host_name:
         return [_which(cmd[0]) or cmd[0], *cmd[1:]]
-    host = _host(host_name)
     spec = remote.encode({
         "cmd": cmd,
         "folder": host.get("dir") or _same_folder(cwd),
@@ -505,8 +534,11 @@ def work(job_id: str):
             output = _take_patch(job, output)
         job.update(output=output[-MAX_OUTPUT:], exit_code=code, finished=time.time())
         limited = hit_limit(output[-2000:])
-        if not limited and code in (0, -1):
+        broken = broken_reason(output[-6000:])
+        if not limited and not broken and code in (0, -1):
             break
+        if broken and code == 0:
+            job["exit_code"] = code = 1
         job["attempts"].append({"agent": slot, "exit_code": code, "error": output[-400:]})
         host = slot.partition("@")[2]
         if host and code in (BUSY_EXIT, SSH_FAILED):
@@ -516,6 +548,8 @@ def work(job_id: str):
                     _cool_down(other, BUSY_SECONDS if code == BUSY_EXIT else UNREACHABLE_SECONDS)
                     if other not in job["tried"]:
                         job["tried"].append(other)
+        elif broken:
+            _cool_down(slot, BROKEN_SECONDS, reason=broken)
         else:
             _cool_down(slot, COOLDOWN_SECONDS if limited else FAILED_SECONDS)
         write_job(job)

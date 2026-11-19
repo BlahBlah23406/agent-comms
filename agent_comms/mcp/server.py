@@ -30,14 +30,14 @@ def _fleet():
     that started it, so without this an update only reaches chats opened after it."""
     global _fleet_loaded
     import importlib
-    from agent_comms.fleet import autosave, capacity, remote, runner
-    modules = [autosave, capacity, remote, runner]
+    names = ["agent_comms.fleet.autosave", "agent_comms.fleet.capacity", "agent_comms.fleet.remote", "agent_comms.fleet.runner"]
+    modules = [importlib.import_module(n) for n in names]
     newest = max(Path(m.__file__).stat().st_mtime for m in modules)
     if _fleet_loaded and newest > _fleet_loaded:
         for module in modules:
             importlib.reload(module)
     _fleet_loaded = max(_fleet_loaded, newest)
-    return runner
+    return sys.modules["agent_comms.fleet.runner"]
 
 
 class AgentCommsMCPServer:

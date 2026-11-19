@@ -1086,6 +1086,8 @@ def handle_agents(args):
         print("No agent CLIs found. Install one of: claude, codex, gemini, agy.")
     for r in rows:
         rest = f"  resting until {r['resting_until']}" if r["resting_until"] else ""
+        if r.get("why"):
+            rest += f" ({r['why']})"
         print(f"{r['agent']:<20} {r['runs_last_5h']} runs in the last 5 hours{rest}")
 
 
