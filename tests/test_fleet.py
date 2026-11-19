@@ -452,6 +452,9 @@ class TestFleet(unittest.TestCase):
 
         def fake_run(command, **kwargs):
             failed = command == [slots[0]]
+            if "stdout" not in kwargs:
+                # Other subprocess calls (e.g. the Windows process check) share this patch.
+                return subprocess.CompletedProcess([], 0, stdout="", stderr="")
             kwargs["stdout"].write("ssh: connection refused" if failed else "finished")
             return subprocess.CompletedProcess(command, 255 if failed else 0)
 
@@ -491,6 +494,9 @@ class TestFleet(unittest.TestCase):
         output = "bwrap: setting up uid map: Operation not permitted"
 
         def fake_run(command, **kwargs):
+            if "stdout" not in kwargs:
+                # Other subprocess calls (e.g. the Windows process check) share this patch.
+                return subprocess.CompletedProcess([], 0, stdout="", stderr="")
             kwargs["stdout"].write(output)
             return subprocess.CompletedProcess(command, 0)
 
@@ -888,6 +894,9 @@ class TestFleet(unittest.TestCase):
 
         def fake_run(command, **kwargs):
             is_busy = command == [slots[0]]
+            if "stdout" not in kwargs:
+                # Other subprocess calls (e.g. the Windows process check) share this patch.
+                return subprocess.CompletedProcess([], 0, stdout="", stderr="")
             kwargs["stdout"].write("BUSY: memory low\n" if is_busy else "done")
             return subprocess.CompletedProcess(command, 1 if is_busy else 0)
 
