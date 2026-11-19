@@ -28,6 +28,7 @@ from agent_comms.fleet import capacity
 PATCH_START = "<<<AGENT-COMMS-PATCH>>>"
 PATCH_END = "<<<AGENT-COMMS-PATCH-END>>>"
 BUSY_EXIT = 75
+FOLDER_TOKEN = "@@AGENT_COMMS_FOLDER@@"
 
 
 def encode(spec: Dict[str, Any]) -> str:
@@ -137,8 +138,13 @@ def _run_here(spec: Dict[str, Any]) -> int:
     if not tree and spec.get("snapshot_data"):
         tree = _snapshot_tree(spec["snapshot_data"])
         copied = tree is not None
-    output, code = _run(spec["cmd"], tree or folder, int(spec.get("timeout") or 1800))
+    workdir = tree or folder
+    cmd = [part.replace(FOLDER_TOKEN, str(workdir)) for part in spec["cmd"]]
+    before = _git(folder, "status", "--porcelain").stdout if tree else ""
+    output, code = _run(cmd, workdir, int(spec.get("timeout") or 1800))
     print(output)
+    if tree and not copied and _git(folder, "status", "--porcelain").stdout != before:
+        print(f"(warning: the helper also changed this machine's own copy at {folder}; those changes were left there)")
 
     if tree:
         _git(tree, "add", "-A")

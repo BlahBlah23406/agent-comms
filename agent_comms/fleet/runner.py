@@ -68,8 +68,10 @@ BROKEN_PATTERNS = {
     "it isn't logged in there": re.compile(r"Waiting for authentication|authentication (?:timed out|failed)|Please run /login|not logged in|Invalid API key", re.I),
 }
 
+FOLDER_TOKEN = "@@AGENT_COMMS_FOLDER@@"
 WORKER_PREFIX = (
-    "You are a helper agent working in the current project folder. Do only the task below, then stop. "
+    "You are a helper agent. Your project folder is {folder} (the current folder). Read and edit files only "
+    "inside it, even if you know another copy of this project elsewhere. Do only the task below, then stop. "
     "Other helpers may be editing other files at the same time, so only touch what this task needs. "
     "End with a short summary of what you changed.\n\nTask: {prompt}"
 )
@@ -494,12 +496,14 @@ def work(job_id: str):
     """Runs a job, moving to another agent if one hits its usage limit or fails to start."""
     job = read_job(job_id)
     timeout = int(config_manager.get("fleet_timeout") or 1800)
-    prompt = WORKER_PREFIX.format(cwd=job["cwd"], prompt=job["prompt"])
+    template = WORKER_PREFIX.format(folder=FOLDER_TOKEN, prompt=job["prompt"])
     slot = job["agent"]
 
     job.setdefault("attempts", [])
     while slot and slot not in job["tried"]:
         job.update(agent=slot, status="running", started=time.time(), pid=os.getpid())
+        # A remote machine fills in its own throwaway folder.
+        prompt = template if "@" in slot else template.replace(FOLDER_TOKEN, job["cwd"])
         job["tried"].append(slot)
         write_job(job)
         capsule_id = None
