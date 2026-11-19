@@ -487,7 +487,7 @@ class TestFleet(unittest.TestCase):
                 slot: now + runner.UNREACHABLE_SECONDS for slot in slots[:2]
             })
             self.assertEqual(usage["runs"][slots[2]], [now])
-            self.assertEqual([call.args[0] for call in run.call_args_list], [[slots[0]], [slots[2]]])
+            self.assertEqual([c.args[0] for c in run.call_args_list if c.args[0][0] != "tasklist"], [[slots[0]], [slots[2]]])
 
     def test_runner_work_zero_exit_sandbox_error_is_failed_and_explained(self):
         now = 10000
