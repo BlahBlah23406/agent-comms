@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shlex
 import shutil
 import subprocess
@@ -30,7 +31,8 @@ COMMANDS = {
         "full": ["claude", "-p", "--dangerously-skip-permissions", "{prompt}"],
     },
     "codex": {
-        "auto": ["codex", "exec", "-s", "workspace-write", "--skip-git-repo-check", "{prompt}"],
+        "auto": ["codex", "exec", "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+                 "--skip-git-repo-check", "{prompt}"],
         "full": ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{prompt}"],
     },
     "gemini": {
@@ -49,9 +51,13 @@ COMMANDS = {
 DEFAULT_AGENTS = ["claude", "codex", "agy"]
 WINDOW_SECONDS = 5 * 3600
 COOLDOWN_SECONDS = 3600
+FAILED_SECONDS = 600
+UNREACHABLE_SECONDS = 300
 BUSY_SECONDS = 600
+SSH_FAILED = 255
 BUSY_EXIT = remote.BUSY_EXIT
 PATH_DIRS = "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
+EXTRA_DIRS = [str(Path.home() / ".local" / "bin"), "/opt/homebrew/bin", "/usr/local/bin"]
 MAX_OUTPUT = 20000
 
 WORKER_PREFIX = (
@@ -73,7 +79,51 @@ def detect_caller(client_name: str = "") -> Optional[str]:
         return "codex"
     if os.environ.get("ANTIGRAVITY_CONVERSATION_ID"):
         return "agy"
+    return _caller_from_parents()
+
+
+def _caller_from_parents() -> Optional[str]:
+    """Walks up the process tree; MCP clients don't always say who they are."""
+    if platform.system() == "Windows":
+        return None
+    pid = os.getppid()
+    for _ in range(8):
+        try:
+            out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)],
+                                 capture_output=True, text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if not out:
+            return None
+        ppid, _, comm = out.partition(" ")
+        name = os.path.basename(comm.strip()).lower()
+        for agent in ("claude", "codex", "agy"):
+            if name == agent:
+                return agent
+        if not ppid.strip().isdigit() or int(ppid) <= 1:
+            return None
+        pid = int(ppid)
     return None
+
+
+def _which(name: str) -> Optional[str]:
+    """Finds a CLI even when the app that started us passed a short PATH."""
+    return shutil.which(name) or shutil.which(name, path=os.pathsep.join(EXTRA_DIRS))
+
+
+def _ssh_env() -> Dict[str, str]:
+    """Codex starts MCP servers without SSH_AUTH_SOCK, so a key with a passphrase can't be used.
+    On macOS the login agent's socket can be read back from launchd."""
+    env = dict(os.environ)
+    if not env.get("SSH_AUTH_SOCK") and platform.system() == "Darwin":
+        try:
+            sock = subprocess.run(["launchctl", "getenv", "SSH_AUTH_SOCK"],
+                                  capture_output=True, text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            sock = ""
+        if sock:
+            env["SSH_AUTH_SOCK"] = sock
+    return env
 
 
 def _data_dir() -> Path:
@@ -93,28 +143,71 @@ def load_usage() -> Dict[str, Any]:
         return {"runs": {}, "cooldown": {}}
 
 
+def _write_atomic(path: Path, text: str):
+    """Several helper jobs write at once; a reader must never see half a file."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+class _Lock:
+    """A lock file shared by every process that changes the usage file."""
+
+    def __init__(self, path: Path):
+        self.path = path
+
+    def __enter__(self):
+        end = time.time() + 10
+        while True:
+            try:
+                os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+                return self
+            except FileExistsError:
+                try:
+                    if time.time() - self.path.stat().st_mtime > 30:
+                        self.path.unlink(missing_ok=True)
+                        continue
+                except OSError:
+                    continue
+                if time.time() > end:
+                    return self
+                time.sleep(0.05)
+
+    def __exit__(self, *exc):
+        self.path.unlink(missing_ok=True)
+
+
 def save_usage(usage: Dict[str, Any]):
-    _usage_file().write_text(json.dumps(usage, indent=2), encoding="utf-8")
+    _write_atomic(_usage_file(), json.dumps(usage, indent=2))
+
+
+def _change_usage(change):
+    with _Lock(_usage_file().with_suffix(".lock")):
+        usage = load_usage()
+        usage.setdefault("runs", {})
+        usage.setdefault("cooldown", {})
+        change(usage)
+        save_usage(usage)
 
 
 def _record_run(slot: str):
-    usage = load_usage()
-    now = time.time()
-    runs = [t for t in usage["runs"].get(slot, []) if now - t < WINDOW_SECONDS]
-    usage["runs"][slot] = runs + [now]
-    save_usage(usage)
+    def change(usage):
+        now = time.time()
+        runs = [t for t in usage["runs"].get(slot, []) if now - t < WINDOW_SECONDS]
+        usage["runs"][slot] = runs + [now]
+    _change_usage(change)
 
 
 def _cool_down(slot: str, seconds: int = COOLDOWN_SECONDS):
-    usage = load_usage()
-    usage["cooldown"][slot] = time.time() + seconds
-    save_usage(usage)
+    def change(usage):
+        usage["cooldown"][slot] = max(usage["cooldown"].get(slot, 0), time.time() + seconds)
+    _change_usage(change)
 
 
 def available_slots() -> List[str]:
     """Every agent we can use, written as 'agent' or 'agent@host'."""
     names = config_manager.get("fleet_agents") or DEFAULT_AGENTS
-    slots = [n for n in names if n in COMMANDS and shutil.which(n)]
+    slots = [n for n in names if n in COMMANDS and _which(n)]
     for host in config_manager.get("fleet_hosts") or []:
         slots += [f"{a}@{host['name']}" for a in host.get("agents", []) if a in COMMANDS]
     return slots
@@ -143,7 +236,16 @@ def pick(exclude: Optional[List[str]] = None, avoid: Optional[set] = None) -> Op
     if not rows:
         return None
     avoid = avoid or set()
-    return min(rows, key=lambda r: (r["agent"].partition("@")[0] in avoid, r["runs_last_5h"]))["agent"]
+    # One subscription covers a provider on every machine, so spread by provider first.
+    by_provider: Dict[str, int] = {}
+    for r in status():
+        provider = r["agent"].partition("@")[0]
+        by_provider[provider] = by_provider.get(provider, 0) + r["runs_last_5h"]
+
+    def rank(r):
+        provider = r["agent"].partition("@")[0]
+        return (provider in avoid, by_provider[provider], r["runs_last_5h"])
+    return min(rows, key=rank)["agent"]
 
 
 def _host(name: str) -> Dict[str, Any]:
@@ -164,19 +266,20 @@ def _same_folder(cwd: str) -> str:
         return "~"
 
 
-def build_command(slot: str, prompt: str, cwd: str, capsule_id: Optional[str] = None) -> List[str]:
+def build_command(slot: str, prompt: str, cwd: str, capsule_id: Optional[str] = None, snapshot: bool = False) -> List[str]:
     agent, _, host_name = slot.partition("@")
     full = config_manager.get("fleet_permissions") == "full" or agent in (config_manager.get("fleet_full_agents") or [])
     mode = "full" if full else "auto"
     model = config_manager.get("ollama_model") or "gpt-oss:120b-cloud"
     cmd = [part.format(prompt=prompt, model=model) for part in COMMANDS[agent][mode]]
     if not host_name:
-        return cmd
+        return [_which(cmd[0]) or cmd[0], *cmd[1:]]
     host = _host(host_name)
     spec = remote.encode({
         "cmd": cmd,
         "folder": host.get("dir") or _same_folder(cwd),
         "capsule": capsule_id,
+        "snapshot": snapshot,
         "timeout": int(config_manager.get("fleet_timeout") or 1800),
     })
     if host.get("shell") == "powershell":
@@ -184,7 +287,8 @@ def build_command(slot: str, prompt: str, cwd: str, capsule_id: Optional[str] = 
     else:
         script = f'export PATH="$PATH:{PATH_DIRS}"; agent-comms remote-run {spec}'
         remote_cmd = f'exec "${{SHELL:-sh}}" -lc {shlex.quote(script)}'
-    return ["ssh", "-n", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", host["ssh"], remote_cmd]
+    return ["ssh", *([] if snapshot else ["-n"]), "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+            "-o", "LogLevel=ERROR", host["ssh"], remote_cmd]
 
 
 def submit(
@@ -197,6 +301,13 @@ def submit(
     cwd = str(Path(cwd or Path.cwd()).resolve())
     jobs = []
     used = {caller} if caller else set()
+    note = None
+    if agent and caller and agent.partition("@")[0] == caller:
+        other = pick(avoid=used)
+        if other and other.partition("@")[0] != caller:
+            # Asking for your own provider would spend the subscription we are trying to spare.
+            note = f"'{agent}' is your own provider, so other providers go first; it is still used if they fail."
+            agent = None
     for prompt in prompts:
         slot = agent or pick(avoid=used)
         if not slot:
@@ -210,7 +321,10 @@ def submit(
             "tried": [],
             "created": time.time(),
             "caller": caller,
+            "attempts": [],
         }
+        if note:
+            job["note"] = note
         used.add(slot.partition("@")[0])
         _record_run(slot)
         write_job(job)
@@ -228,17 +342,80 @@ def submit(
 
 
 def write_job(job: Dict[str, Any]):
-    (_data_dir() / f"{job['id']}.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
+    _write_atomic(_data_dir() / f"{job['id']}.json", json.dumps(job, indent=2))
+
+
+def _alive(pid: Optional[int]) -> bool:
+    if not pid:
+        return False
+    if platform.system() == "Windows":
+        try:
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            return True
+        return str(pid) in out
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _check_stale(job: Dict[str, Any]) -> Dict[str, Any]:
+    """A job whose worker died (reboot, crash, killed) would otherwise say 'running' forever."""
+    if job.get("status") == "queued" and time.time() - job.get("created", 0) > 120:
+        dead = True
+    elif job.get("status") == "running" and job.get("pid"):
+        dead = not _alive(job["pid"])
+    elif job.get("status") == "running":
+        dead = time.time() - job.get("started", job.get("created", 0)) > int(config_manager.get("fleet_timeout") or 1800) + 300
+    else:
+        dead = False
+    if dead:
+        job.update(status="failed", exit_code=-1, finished=time.time(),
+                   output=(job.get("output") or "") + "\n(the helper process stopped before finishing; run the task again)")
+        write_job(job)
+    return job
 
 
 def read_job(job_id: str) -> Optional[Dict[str, Any]]:
     path = _data_dir() / f"{job_id}.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    return _check_stale(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
+
+
+def running_local_jobs() -> int:
+    """Helper jobs this machine is running itself (not ones it handed to other machines)."""
+    count = 0
+    for path in _data_dir().glob("*.json"):
+        try:
+            job = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if job.get("status") == "running" and "@" not in job.get("agent", "") and _alive(job.get("pid")):
+            count += 1
+    return count
+
+
+def running_incoming_jobs() -> int:
+    """Jobs other machines sent here; remote-run leaves an incoming-<pid> marker while it works."""
+    count = 0
+    for marker in _data_dir().glob("incoming-*.pid"):
+        try:
+            pid = int(marker.stem.partition("-")[2])
+        except ValueError:
+            continue
+        if _alive(pid):
+            count += 1
+        else:
+            marker.unlink(missing_ok=True)
+    return count
 
 
 def list_jobs(limit: int = 20) -> List[Dict[str, Any]]:
     paths = sorted(_data_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return [json.loads(p.read_text(encoding="utf-8")) for p in paths[:limit]]
+    return [_check_stale(json.loads(p.read_text(encoding="utf-8"))) for p in paths[:limit]]
 
 
 def _share_state(job: Dict[str, Any]) -> Optional[str]:
@@ -289,26 +466,33 @@ def work(job_id: str):
     prompt = WORKER_PREFIX.format(cwd=job["cwd"], prompt=job["prompt"])
     slot = job["agent"]
 
+    job.setdefault("attempts", [])
     while slot and slot not in job["tried"]:
-        job.update(agent=slot, status="running", started=time.time())
+        job.update(agent=slot, status="running", started=time.time(), pid=os.getpid())
         job["tried"].append(slot)
         write_job(job)
         capsule_id = None
-        if "@" in slot and not job.get("capsule_failed"):
-            try:
-                capsule_id = job.get("capsule_id") or _share_state(job)
-                job["capsule_id"] = capsule_id
-            except Exception as e:
-                job["capsule_failed"] = str(e)
+        snap = None
+        if "@" in slot:
+            if not job.get("capsule_failed"):
+                try:
+                    capsule_id = job.get("capsule_id") or _share_state(job)
+                    job["capsule_id"] = capsule_id
+                except Exception as e:
+                    job["capsule_failed"] = str(e)
+            snap = remote.snapshot(Path(job["cwd"]))
         try:
             with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out:
                 code = subprocess.run(
-                    build_command(slot, prompt, job["cwd"], capsule_id),
+                    build_command(slot, prompt, job["cwd"], capsule_id, snapshot=bool(snap)),
                     cwd=job["cwd"],
                     stdout=out,
                     stderr=subprocess.STDOUT,
                     timeout=timeout,
-                    stdin=subprocess.DEVNULL,
+                    input=snap,
+                    stdin=None if snap else subprocess.DEVNULL,
+                    text=bool(snap) or None,
+                    env=_ssh_env() if "@" in slot else None,
                 ).returncode
                 out.seek(0)
                 output = out.read().strip()
@@ -320,28 +504,65 @@ def work(job_id: str):
         if "@" in slot:
             output = _take_patch(job, output)
         job.update(output=output[-MAX_OUTPUT:], exit_code=code, finished=time.time())
-        broken = hit_limit(output[-2000:]) or code not in (0, -1)
-        if not broken:
+        limited = hit_limit(output[-2000:])
+        if not limited and code in (0, -1):
             break
-        if code == BUSY_EXIT:
-            host = slot.partition("@")[2]
+        job["attempts"].append({"agent": slot, "exit_code": code, "error": output[-400:]})
+        host = slot.partition("@")[2]
+        if host and code in (BUSY_EXIT, SSH_FAILED):
+            # The machine, not the agent, is the problem: rest the whole machine briefly.
             for other in available_slots():
                 if other.partition("@")[2] == host:
-                    _cool_down(other, BUSY_SECONDS)
+                    _cool_down(other, BUSY_SECONDS if code == BUSY_EXIT else UNREACHABLE_SECONDS)
+                    if other not in job["tried"]:
+                        job["tried"].append(other)
         else:
-            _cool_down(slot)
+            _cool_down(slot, COOLDOWN_SECONDS if limited else FAILED_SECONDS)
+        write_job(job)
         slot = pick(exclude=job["tried"], avoid={job.get("caller")})
         if slot:
             _record_run(slot)
 
     job["status"] = "done" if job.get("exit_code") == 0 else "failed"
+    if job["status"] == "failed" and job["attempts"]:
+        tried = "; ".join(f"{a['agent']} (exit {a['exit_code']}): {a['error'].strip().splitlines()[-1][:150] if a['error'].strip() else 'no output'}"
+                          for a in job["attempts"])
+        job["output"] = f"{job.get('output', '')}\n\nEvery agent tried failed: {tried}"
     write_job(job)
 
 
 def wait(job_ids: List[str], timeout: float = 1800) -> List[Dict[str, Any]]:
-    end = time.time() + timeout
+    end = time.time() + min(timeout, 900)
     while True:
         jobs = [read_job(j) for j in job_ids]
         if all(j and j["status"] in ("done", "failed") for j in jobs) or time.time() > end:
             return jobs
         time.sleep(2)
+
+
+def mcp_run(arguments: Dict[str, Any], folder: str, client_name: str = "") -> str:
+    """The run_on_agents tool. Lives here so a code update reaches chats that are already open."""
+    try:
+        jobs = submit(arguments["tasks"], cwd=folder, agent=arguments.get("agent"), caller=detect_caller(client_name))
+    except Exception as e:
+        return json.dumps({"error": str(e), "what_to_do": "Tell the user no helper could take the work, then do it yourself."})
+    rows = [{"job_id": j["id"], "agent": j["agent"], "task": j["prompt"][:200]} for j in jobs]
+    notes = sorted({j["note"] for j in jobs if j.get("note")})
+    return json.dumps({
+        "jobs": rows,
+        "notes": notes,
+        "next": "Do your own part now. Then call check_jobs with these job_ids (wait_seconds up to 600). "
+                "If a job failed, read its attempts and tell the user why before doing that part yourself.",
+    }, indent=2)
+
+
+def mcp_check(job_ids: List[str], wait_seconds: float = 0) -> str:
+    jobs = wait(job_ids, wait_seconds or 0)
+    return json.dumps([
+        {
+            "id": j["id"], "agent": j["agent"], "status": j["status"], "exit_code": j.get("exit_code"),
+            "attempts": [f"{a['agent']} exit {a['exit_code']}: {a['error'].strip()[-200:]}" for a in j.get("attempts", [])],
+            "output": j.get("output"),
+        } if j else None
+        for j in jobs
+    ], indent=2)

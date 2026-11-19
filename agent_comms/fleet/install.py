@@ -25,12 +25,13 @@ This machine is `{alias}`. Other machines: {peers}.
 1. **Saving work:** a hook saves a capsule of this chat every other turn and right away when a usage limit
    shows up. You don't need to do anything. If the user says "continue" or "pick up where I left off",
    call the `resume_latest` tool (or run `agent-comms resume`) and keep going from that briefing.
-2. **Sharing the work:** before a big task, decide if it splits into parts that don't touch the same files.
-   If it does, hand the parts out with the `run_on_agents` tool (or `agent-comms run "part 1" "part 2"`),
-   keep one part for yourself, then check results with `check_jobs`. It picks whichever of
-   claude / codex / agy (and SSH hosts) has been used the least and skips any that hit a limit.
-   Small tasks: just do them. If the user says not to use other agents, don't.
-3. Read every helper's result before you tell the user it is done.
+2. **Sharing the work:** the user wants work spread across subscriptions. If a task has two or more parts
+   that touch different files (or research that needs no files), hand out every part but one with the
+   `run_on_agents` tool, keep one part for yourself, and do it while they run. Leave `agent` empty: it
+   picks the least-used provider and uses your own provider last. Then read results with `check_jobs`
+   (wait_seconds up to 600). Small one-part tasks: just do them. If the user says not to use other agents, don't.
+3. If a helper job fails, read its `attempts`, tell the user why in one line, then do that part yourself.
+   Read every helper's result before you tell the user it is done.
 {end}
 """
 
@@ -122,9 +123,33 @@ def install_codex(home: Path, python: str, alias: str):
             f'\n[mcp_servers.agent-comms]\ncommand = "{py}"\nargs = ["-m", "agent_comms.cli", "mcp"]\n'
             f'\n[mcp_servers.agent-comms.env]\nAGENT_COMMS_MACHINE_ALIAS = "{alias}"\n'
         )
-        config.parent.mkdir(parents=True, exist_ok=True)
-        config.write_text(text, encoding="utf-8")
+    text = codex_server_options(text)
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(text, encoding="utf-8")
     return hooks_path
+
+
+CODEX_OPTIONS = [
+    # Codex gives MCP servers only a few env vars; without the SSH agent a key with a passphrase fails.
+    'env_vars = ["SSH_AUTH_SOCK"]',
+    # check_jobs can wait up to 10 minutes; Codex's default tool timeout is 60 seconds.
+    "tool_timeout_sec = 900",
+]
+
+
+def codex_server_options(text: str) -> str:
+    """Adds our options under [mcp_servers.agent-comms] if they are missing, keeping the rest."""
+    header = "[mcp_servers.agent-comms]\n"
+    at = text.find(header)
+    if at < 0:
+        return text
+    body_end = text.find("\n[", at + len(header))
+    body = text[at + len(header): body_end if body_end >= 0 else len(text)]
+    missing = [o for o in CODEX_OPTIONS if o.split(" =")[0] + " =" not in body]
+    if not missing:
+        return text
+    insert = at + len(header)
+    return text[:insert] + "".join(o + "\n" for o in missing) + text[insert:]
 
 
 def install_agy(home: Path, python: str, alias: str):

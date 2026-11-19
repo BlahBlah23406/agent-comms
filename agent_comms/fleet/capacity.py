@@ -15,8 +15,7 @@ from typing import Dict, Optional
 
 from agent_comms.config import config_manager
 
-AGENT_NAMES = {"claude", "codex", "agy", "gemini", "ollama"}
-DEFAULTS = {"cap_cpu_percent": 85, "cap_running_agents": 6, "cap_min_free_mb": 1024}
+DEFAULTS = {"cap_cpu_percent": 85, "cap_running_agents": 4, "cap_min_free_mb": 1024}
 
 
 def _cap(name: str) -> float:
@@ -85,16 +84,10 @@ def free_memory_mb() -> Optional[float]:
 
 
 def running_agents() -> int:
-    try:
-        if platform.system() == "Windows":
-            out = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=20).stdout
-            names = [line.split(",")[0].strip('"').lower().removesuffix(".exe") for line in out.splitlines() if line]
-        else:
-            out = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True, timeout=10).stdout
-            names = [os.path.basename(line.strip()).lower() for line in out.splitlines()]
-    except (OSError, subprocess.SubprocessError):
-        return 0
-    return sum(1 for n in names if n in AGENT_NAMES)
+    """Helper jobs running on this machine: ones it started itself plus ones sent here over SSH.
+    Agent apps and chats the user has open don't count; they would keep the machine busy forever."""
+    from agent_comms.fleet.runner import running_incoming_jobs, running_local_jobs
+    return running_local_jobs() + running_incoming_jobs()
 
 
 def check() -> Dict[str, object]:
@@ -108,7 +101,7 @@ def check() -> Dict[str, object]:
     elif free is not None and free < _cap("cap_min_free_mb"):
         reason = f"only {free:.0f} MB free memory (cap {_cap('cap_min_free_mb'):.0f} MB)"
     elif agents >= _cap("cap_running_agents"):
-        reason = f"{agents} agent CLIs already running (cap {_cap('cap_running_agents'):.0f})"
+        reason = f"{agents} helper jobs already running (cap {_cap('cap_running_agents'):.0f})"
     return {
         "busy": reason is not None,
         "reason": reason,

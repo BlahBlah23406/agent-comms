@@ -1026,6 +1026,11 @@ def _print_job(job):
 
 def handle_run(args):
     from agent_comms.fleet import runner
+    if os.environ.get("CODEX_SANDBOX_NETWORK_DISABLED") or os.environ.get("CODEX_SANDBOX"):
+        # Helpers started from inside Codex's shell sandbox inherit it: no network, so no SSH or agent logins.
+        print("You are inside Codex's sandbox, where helpers can't reach the network. "
+              "Use the run_on_agents tool instead, or run this command with sandbox approval.")
+        sys.exit(1)
     jobs = runner.submit(args.prompts, cwd=args.dir, agent=args.agent, caller=runner.detect_caller())
     for job in jobs:
         _print_job(job)
@@ -1063,7 +1068,7 @@ def handle_busy(args):
             print(f"BUSY: {state['reason']}")
             sys.exit(BUSY_EXIT)
         return
-    print(f"CPU: {state['cpu_percent']}%  Free memory: {state['free_memory_mb']} MB  Agent CLIs running: {state['running_agents']}")
+    print(f"CPU: {state['cpu_percent']}%  Free memory: {state['free_memory_mb']} MB  Helper jobs running: {state['running_agents']}")
     print(f"Busy: {state['reason']}" if state["busy"] else "Ready to take helper work.")
 
 

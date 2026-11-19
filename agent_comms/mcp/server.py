@@ -22,6 +22,24 @@ from agent_comms.session.discovery import UDPDiscoveryBroadcaster
 from agent_comms.session.manager import CrossSessionManager
 
 
+_fleet_loaded = 0.0
+
+
+def _fleet():
+    """The fleet runner, reloaded when its code changed. An MCP server lives as long as the chat
+    that started it, so without this an update only reaches chats opened after it."""
+    global _fleet_loaded
+    import importlib
+    from agent_comms.fleet import autosave, capacity, remote, runner
+    modules = [autosave, capacity, remote, runner]
+    newest = max(Path(m.__file__).stat().st_mtime for m in modules)
+    if _fleet_loaded and newest > _fleet_loaded:
+        for module in modules:
+            importlib.reload(module)
+    _fleet_loaded = max(_fleet_loaded, newest)
+    return runner
+
+
 class AgentCommsMCPServer:
     def __init__(self, workspace_path: Optional[Path] = None):
         self.workspace_path = workspace_path or Path.cwd()
@@ -224,12 +242,12 @@ class AgentCommsMCPServer:
             },
             {
                 "name": "run_on_agents",
-                "description": "Hands tasks to other agent CLIs (claude, codex, agy) on this and other machines in the background. Leave `agent` empty: each task goes to a different provider, your own provider is used last, busy machines are skipped, and a task that hits a usage limit moves to another agent by itself. Returns job IDs right away; read results with check_jobs.",
+                "description": "Hands tasks to other agent CLIs (claude, codex, agy) on this and other machines in the background, so one subscription doesn't pay for everything. Leave `agent` empty: each task goes to a different provider, your own provider is used last, busy machines are skipped, and a task that fails or hits a usage limit moves to another agent by itself. Returns job IDs right away; do your own part meanwhile, then read results with check_jobs.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "tasks": {"type": "array", "items": {"type": "string"}, "description": "One complete, self-contained instruction per helper. Give each helper different files."},
-                        "agent": {"type": "string", "description": "Usually leave empty. Only to prefer one agent first, e.g. codex or claude@my-server; it still moves on if that agent fails"},
+                        "agent": {"type": "string", "description": "Leave empty. Only set it when the user asks for a specific agent. Naming your own provider is ignored while others are free."},
                         "folder": {"type": "string", "description": "Project folder the helpers work in (needed from chat apps)"},
                     },
                     "required": ["tasks"],
@@ -492,29 +510,16 @@ class AgentCommsMCPServer:
             return json.dumps(res, indent=2)
 
         elif name == "run_on_agents":
-            from agent_comms.fleet import runner
-            try:
-                folder = arguments.get("folder") or str(self.workspace_path)
-                jobs = runner.submit(
-                    arguments["tasks"],
-                    cwd=str(Path(folder).expanduser()),
-                    agent=arguments.get("agent"),
-                    caller=runner.detect_caller(self.client_name),
-                )
-            except Exception as e:
-                return json.dumps({"error": str(e)})
-            return json.dumps([{"job_id": j["id"], "agent": j["agent"], "task": j["prompt"]} for j in jobs], indent=2)
+            runner = _fleet()
+            folder = arguments.get("folder") or str(self.workspace_path)
+            return await asyncio.to_thread(runner.mcp_run, arguments, str(Path(folder).expanduser()), self.client_name)
 
         elif name == "check_jobs":
-            from agent_comms.fleet import runner
-            jobs = await asyncio.to_thread(runner.wait, arguments["job_ids"], arguments.get("wait_seconds", 0))
-            return json.dumps([
-                {k: j.get(k) for k in ("id", "agent", "status", "exit_code", "output")} if j else None
-                for j in jobs
-            ], indent=2)
+            runner = _fleet()
+            return await asyncio.to_thread(runner.mcp_check, arguments["job_ids"], arguments.get("wait_seconds", 0))
 
         elif name == "agent_status":
-            from agent_comms.fleet import runner
+            runner = _fleet()
             return json.dumps(runner.status(), indent=2)
 
         return json.dumps({"error": f"Unknown tool: {name}"})
