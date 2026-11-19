@@ -64,8 +64,9 @@ MAX_OUTPUT = 20000
 
 # The agent started but can't work at all on that machine (exit code is often still 0).
 BROKEN_PATTERNS = {
-    "its sandbox can't start there": re.compile(r"bwrap: |Failed to create unified exec process|sandbox (?:setup|initiali[sz]ation) failed", re.I),
-    "it isn't logged in there": re.compile(r"Waiting for authentication|authentication (?:timed out|failed)|Please run /login|not logged in|Invalid API key", re.I),
+    # Exact CLI error lines only: a helper writing *about* logins or sandboxes must not match.
+    "its sandbox can't start there": re.compile(r"^bwrap: |Failed to create unified exec process", re.M),
+    "it isn't logged in there": re.compile(r"^Waiting for authentication \(timeout|^Error: authentication timed out|^Please run /login", re.M),
 }
 
 FOLDER_TOKEN = "@@AGENT_COMMS_FOLDER@@"
