@@ -24,7 +24,6 @@ from typing import Any, Dict, List, Optional
 from agent_comms.config import config_manager
 from agent_comms.fleet import capacity
 from agent_comms.fleet import remote
-from agent_comms.fleet.autosave import hit_limit
 
 COMMANDS = {
     "claude": {
@@ -41,8 +40,9 @@ COMMANDS = {
         "full": ["gemini", "--yolo", "-p", "{prompt}"],
     },
     "agy": {
-        "auto": ["agy", "--mode", "auto", "-p", "{prompt}"],
-        "full": ["agy", "--dangerously-skip-permissions", "-p", "{prompt}"],
+        # Older agy stops print mode after 5 minutes unless told otherwise.
+        "auto": ["agy", "--mode", "auto", "--print-timeout", "{timeout}s", "-p", "{prompt}"],
+        "full": ["agy", "--dangerously-skip-permissions", "--print-timeout", "{timeout}s", "-p", "{prompt}"],
     },
     "ollama": {
         "auto": ["ollama", "run", "{model}", "{prompt}"],
@@ -61,6 +61,15 @@ BUSY_EXIT = remote.BUSY_EXIT
 PATH_DIRS = "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
 EXTRA_DIRS = [str(Path.home() / ".local" / "bin"), "/opt/homebrew/bin", "/usr/local/bin"]
 MAX_OUTPUT = 20000
+
+# A helper's own usage-limit or time-out message, at the start of a line. Helpers often write *about*
+# limits (in code, tests, summaries), so loose matching would throw good work away and retry it.
+HELPER_LIMIT = re.compile(
+    r"^[\s■⚠>*-]*(?:error:?\s*|\[\w+\]\s*)?(?:You[’']ve hit your \w+ limit|You have reached your usage limit"
+    r"|Usage limit reached|Rate limit reached|You[’']ve exceeded your current quota|(?:error|status)[^\n]{0,40}RESOURCE_EXHAUSTED)",
+    re.I | re.M,
+)
+TIMED_OUT = re.compile(r"^\[agy\] print timeout after", re.M)
 
 # The agent started but can't work at all on that machine (exit code is often still 0).
 BROKEN_PATTERNS = {
@@ -211,6 +220,16 @@ def _record_run(slot: str):
     _change_usage(change)
 
 
+def _record_minutes(slot: str, seconds: float):
+    """How long an attempt actually worked: a 10-second probe and a 20-minute feature are not the same load."""
+    def change(usage):
+        now = time.time()
+        done = [e for e in usage.setdefault("minutes", {}).get(slot, []) if now - e[0] < WINDOW_SECONDS]
+        cap = int(config_manager.get("fleet_timeout") or 1800)
+        usage["minutes"][slot] = done + [[now, round(min(max(seconds, 0), cap) / 60, 2)]]
+    _change_usage(change)
+
+
 def _cool_down(slot: str, seconds: int = COOLDOWN_SECONDS, reason: Optional[str] = None):
     def change(usage):
         until = time.time() + seconds
@@ -246,10 +265,12 @@ def status() -> List[Dict[str, Any]]:
     rows = []
     for slot in available_slots():
         runs = [t for t in usage["runs"].get(slot, []) if now - t < WINDOW_SECONDS]
+        minutes = sum(m for t, m in usage.get("minutes", {}).get(slot, []) if now - t < WINDOW_SECONDS)
         cool = usage["cooldown"].get(slot, 0)
         row = {
             "agent": slot,
             "runs_last_5h": len(runs),
+            "minutes_last_5h": round(minutes, 1),
             "resting_until": time.strftime("%H:%M", time.localtime(cool)) if cool > now else None,
         }
         if cool > now and usage.get("reason", {}).get(slot):
@@ -266,15 +287,19 @@ def pick(exclude: Optional[List[str]] = None, avoid: Optional[set] = None) -> Op
     if not rows:
         return None
     avoid = avoid or set()
-    # One subscription covers a provider on every machine, so spread by provider first.
-    by_provider: Dict[str, int] = {}
+    # One subscription covers a provider on every machine, so spread by provider first, weighted by
+    # minutes actually worked (a stand-in for tokens). Each start adds half a minute so a batch spreads
+    # out before any of it finishes.
+    def load(r):
+        return r.get("minutes_last_5h", 0) + 0.5 * r["runs_last_5h"]
+    by_provider: Dict[str, float] = {}
     for r in status():
         provider = r["agent"].partition("@")[0]
-        by_provider[provider] = by_provider.get(provider, 0) + r["runs_last_5h"]
+        by_provider[provider] = by_provider.get(provider, 0) + load(r)
 
     def rank(r):
         provider = r["agent"].partition("@")[0]
-        return (provider in avoid, by_provider[provider], r["runs_last_5h"])
+        return (provider in avoid, by_provider[provider], load(r))
     return min(rows, key=rank)["agent"]
 
 
@@ -306,7 +331,8 @@ def build_command(slot: str, prompt: str, cwd: str, capsule_id: Optional[str] = 
     )
     mode = "full" if full else "auto"
     model = config_manager.get("ollama_model") or "gpt-oss:120b-cloud"
-    cmd = [part.format(prompt=prompt, model=model) for part in COMMANDS[agent][mode]]
+    timeout = int(config_manager.get("fleet_timeout") or 1800)
+    cmd = [part.format(prompt=prompt, model=model, timeout=timeout) for part in COMMANDS[agent][mode]]
     if not host_name:
         return [_which(cmd[0]) or cmd[0], *cmd[1:]]
     spec = remote.encode({
@@ -541,8 +567,11 @@ def work(job_id: str):
         except Exception as e:
             output, code = str(e), -1
 
-        limited = hit_limit(output[-2000:])
+        _record_minutes(slot, time.time() - job["started"])
+        limited = bool(HELPER_LIMIT.search(output[-1500:]))
         broken = broken_reason(output[-6000:])
+        if TIMED_OUT.search(output[-1500:]) and code == 0:
+            code = 1
         accepted = not limited and not broken and code in (0, -1)
         if "@" in slot:
             # Only the attempt we keep may change the project; the next agent redoes a failed one.

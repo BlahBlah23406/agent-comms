@@ -204,3 +204,21 @@ def install_all(home: Path, alias: str, peers: List[str], python: str = sys.exec
             done.append(f"{name}: instructions in {md}")
 
     return done
+
+
+# Bump when GUIDANCE, hooks or Codex options change, so existing installs pick them up.
+INSTALL_VERSION = 3
+
+
+def refresh_if_outdated(python: str = sys.executable) -> bool:
+    """Re-installs the instructions, hooks and Codex options after an update (git pull), so every
+    user and every chat gets the current behaviour without running setup again."""
+    from agent_comms.config import config_manager
+    if config_manager.get("install_version") == INSTALL_VERSION:
+        return False
+    alias = config_manager.get("machine_alias") or "this-machine"
+    names = list(config_manager.get("known_peers") or []) + [h["name"] for h in config_manager.get("fleet_hosts") or []]
+    peers = sorted({n for n in names if n and n != alias})
+    install_all(Path.home(), alias, peers, python)
+    config_manager.set("install_version", INSTALL_VERSION)
+    return True

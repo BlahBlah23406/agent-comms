@@ -30,8 +30,13 @@ class TestFleet(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = Path(tempfile.mkdtemp(prefix="agent_comms_test_fleet_")).resolve()
+        self._saved_helper_env = os.environ.pop(runner.HELPER_ENV, None)
 
     def tearDown(self):
+        if self._saved_helper_env is not None:
+            os.environ[runner.HELPER_ENV] = self._saved_helper_env
+        else:
+            os.environ.pop(runner.HELPER_ENV, None)
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
@@ -620,6 +625,183 @@ class TestFleet(unittest.TestCase):
                 if process.is_alive():
                     process.terminate()
                     process.join(timeout=5)
+
+    def test_runner_pick_balances_by_minutes_worked(self):
+        now = time.time()
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "available_slots", return_value=["claude", "codex"]
+        ), patch.object(capacity, "check", return_value={"busy": False, "reason": None}):
+            runner.save_usage({
+                "runs": {
+                    "claude": [now] * 2,
+                    "codex": [now] * 5,
+                },
+                "minutes": {
+                    "claude": [[now, 15.0], [now, 15.0]],
+                    "codex": [[now, 3.0]],
+                },
+                "cooldown": {},
+            })
+            self.assertEqual(runner.pick(), "codex")
+
+    def test_runner_record_minutes_caps_at_fleet_timeout(self):
+        now = 10000.0
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            config_manager, "get", side_effect=lambda k, default=None: 600 if k == "fleet_timeout" else default
+        ), patch.object(runner.time, "time", return_value=now):
+            runner._record_minutes("claude", 3600)
+            runner._record_minutes("claude", 120)
+            usage = runner.load_usage()
+            self.assertEqual(usage["minutes"]["claude"], [[now, 10.0], [now, 2.0]])
+
+    def test_tick_near_limit_claude_codex_and_benign(self):
+        claude_path = self.temp_dir / "claude_limit.jsonl"
+        claude_path.write_text(
+            json.dumps({
+                "type": "user",
+                "message": {"content": "[Usage limit reached; a short grace allowance remains to wrap up]"},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        self.assertIsNotNone(tick.near_limit(str(claude_path)))
+
+        codex_high = self.temp_dir / "codex_high.jsonl"
+        codex_high.write_text(
+            json.dumps({
+                "type": "token_count",
+                "rate_limits": {"primary": {"used_percent": 95}},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(tick.near_limit(str(codex_high)), "95% of the usage limit used")
+
+        codex_low = self.temp_dir / "codex_low.jsonl"
+        codex_low.write_text(
+            json.dumps({
+                "type": "token_count",
+                "rate_limits": {"primary": {"used_percent": 14}},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(tick.near_limit(str(codex_low)))
+
+        mid_sentence = self.temp_dir / "mid_sentence.jsonl"
+        mid_sentence.write_text(
+            json.dumps({
+                "type": "assistant",
+                "message": {
+                    "content": "The test checks how the parser handles a message when a usage limit reached error appears in logs."
+                },
+            }) + "\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(tick.near_limit(str(mid_sentence)))
+
+    def test_tick_near_limit_ignores_short_assistant_mention(self):
+        transcript = self.temp_dir / "assistant_mention.jsonl"
+        transcript.write_text(
+            json.dumps({
+                "type": "assistant",
+                "message": {"content": "The log says usage limit reached during the test."},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(tick.near_limit(str(transcript)))
+
+    def test_tick_main_immediate_save_on_near_limit_and_rate_limited(self):
+        transcript = self.temp_dir / "codex_limit.jsonl"
+        transcript.write_text(
+            json.dumps({
+                "type": "token_count",
+                "rate_limits": {"primary": {"used_percent": 95}},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        folder = self.temp_dir / ".agent-comms"
+        folder.mkdir()
+        (folder / "saves.json").write_text(json.dumps({"sess-limit": 9940}), encoding="utf-8")
+        raw = json.dumps({
+            "session_id": "sess-limit",
+            "cwd": str(self.temp_dir),
+            "transcript_path": str(transcript),
+        })
+
+        with patch.object(Path, "home", return_value=self.temp_dir), patch.object(
+            sys, "argv", ["tick", "codex"]
+        ), patch.object(sys, "stdout", new_callable=io.StringIO), patch.object(
+            tick.time, "time", side_effect=[10000, 10100, 10599]
+        ), patch.object(tick.subprocess, "Popen") as popen:
+            with patch.object(sys, "stdin", io.StringIO(raw)):
+                tick.main()
+            self.assertEqual(popen.call_count, 1)
+            payload_path = Path(popen.call_args.args[0][-1])
+            saved_payload = json.loads(payload_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved_payload["near_limit"], "95% of the usage limit used")
+            self.assertIn("--force", popen.call_args.args[0])
+            self.assertEqual(
+                json.loads((folder / "saves.json").read_text(encoding="utf-8")),
+                {"sess-limit": 10000, "limit:sess-limit": 10000},
+            )
+
+            for elapsed in (100, 599):
+                with self.subTest(seconds_since_limit_save=elapsed), patch.object(
+                    sys, "stdin", io.StringIO(raw)
+                ):
+                    tick.main()
+                    self.assertEqual(popen.call_count, 1)
+
+    def test_autosave_with_near_limit_marks_metadata(self):
+        cfg_dir = self.temp_dir / "config"
+        cfg_dir.mkdir()
+        store = CapsuleStore(base_dir=self.temp_dir / "capsules")
+        cwd = self.temp_dir / "workspace"
+        cwd.mkdir()
+
+        with patch.object(config_manager, "config_dir", cfg_dir), patch.object(
+            config_manager, "get", return_value=None
+        ), patch.object(Path, "home", return_value=self.temp_dir):
+            payload = {
+                "cwd": str(cwd),
+                "session_id": "sess-near",
+                "prompt": "Continue working on the feature",
+                "near_limit": "95% of the usage limit used",
+            }
+            capsule = autosave(payload, agent="codex", every=2, store=store)
+            self.assertIsNotNone(capsule)
+            self.assertTrue(capsule.extra_metadata["hit_limit"])
+            self.assertEqual(capsule.extra_metadata["near_limit"], "95% of the usage limit used")
+
+    def test_install_refresh_if_outdated_runs_once_and_skips_when_current(self):
+        state = {"machine_alias": "triskelion", "known_peers": ["code-47"]}
+
+        def fake_get(k, default=None):
+            return state.get(k, default)
+
+        def fake_set(k, v):
+            state[k] = v
+
+        with patch.object(Path, "home", return_value=self.temp_dir), patch.object(
+            config_manager, "get", side_effect=fake_get
+        ), patch.object(
+            config_manager, "set", side_effect=fake_set
+        ), patch.object(install, "install_all") as mock_install_all:
+            self.assertTrue(install.refresh_if_outdated(python="/usr/bin/python3"))
+            mock_install_all.assert_called_once_with(
+                self.temp_dir, "triskelion", ["code-47"], "/usr/bin/python3"
+            )
+            self.assertEqual(state["install_version"], install.INSTALL_VERSION)
+
+            self.assertFalse(install.refresh_if_outdated(python="/usr/bin/python3"))
+            mock_install_all.assert_called_once()
+
+    def test_runner_submit_raises_when_helper_env_set(self):
+        with patch.dict(os.environ, {runner.HELPER_ENV: "1"}), patch.object(
+            config_manager, "config_dir", self.temp_dir
+        ), patch.object(runner.subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(RuntimeError, "already a helper job"):
+                runner.submit(["subtask"], cwd=str(self.temp_dir))
+            popen.assert_not_called()
+            self.assertFalse((self.temp_dir / "jobs").exists())
 
 
 if __name__ == "__main__":

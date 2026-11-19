@@ -116,7 +116,7 @@ def autosave(
 
     messages, tail = read_transcript(payload.get("transcript_path") or payload.get("transcriptPath"))
     reply = payload.get("last_assistant_message") or payload.get("prompt_response") or ""
-    limited = hit_limit(f"{reply}\n{tail}")
+    limited = hit_limit(f"{reply}\n{tail}") or bool(payload.get("near_limit"))
     every = every or int(config_manager.get("autosave_every") or 2)
     if not force and turn % every and not limited:
         return None
@@ -143,6 +143,8 @@ def autosave(
         capture_loose_files=False,
     )
     capsule.extra_metadata.update({"autosave": True, "turn": turn, "hit_limit": limited})
+    if payload.get("near_limit"):
+        capsule.extra_metadata["near_limit"] = payload["near_limit"]
 
     store = store or CapsuleStore()
     store.save(capsule)

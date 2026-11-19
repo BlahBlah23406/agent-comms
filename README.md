@@ -40,7 +40,7 @@ agent-comms config set auto_sync_storage true
 
 ## Switching Agents (Autosave)
 
-After setup, a hook saves a capsule of your chat every 2 turns and right away when a usage limit message shows up. Long turns are saved too: a tiny hook runs after each tool call and saves every 10 minutes in the background.
+After setup, a hook saves a capsule of your chat every 2 turns. During long turns, a hook runs after each tool call and saves every 10 minutes in the background. It also saves right away when Codex reaches 90% of its 5-hour or weekly limit, when Claude Code shows its usage-limit grace warning, or when any agent shows a usage-limit message. To change the Codex threshold, run `agent-comms config set save_at_percent 85`.
 
 Codex asks you to trust new hooks once; open `codex` and approve the agent-comms hooks or they won't run.
 
@@ -63,9 +63,9 @@ agent-comms config set autosave_every 3
 
 ## Sharing Work Across Agents
 
-When a big task splits into independent parts, `agent-comms` can hand those parts out to other agent CLIs in the background. When possible, each task goes to a different provider, and the agent asking for help uses its own provider last so one subscription doesn't pay for everything. It picks the least-used CLI in the last 5 hours. A usage-limit message like "session limit" rests that agent for an hour and moves the task to another agent. Agents whose sandbox can't start or that aren't logged in on a machine rest 6 hours, and `agent-comms agents` shows why. If a machine can't be reached over SSH, only that machine rests 5 minutes. If every agent tried fails, the failed task lists what each agent hit.
+For big tasks, helpers do most of the work. The agent you talk to plans the work, hands it out, reviews the results, and runs the final tests. Helpers can't hand their tasks on. When possible, each task goes to a different provider, and the agent asking for help uses its own provider last so one subscription doesn't pay for everything. It balances work across providers using minutes worked in the last 5 hours as a stand-in for tokens. A usage-limit message like "session limit" rests that agent for an hour and moves the task to another agent. Agents whose sandbox can't start or that aren't logged in on a machine rest 6 hours, and `agent-comms agents` shows why. If a machine can't be reached over SSH, only that machine rests 5 minutes. If every agent tried fails, the failed task lists what each agent hit.
 
-Check which agent CLIs are installed and how many times each ran in the last 5 hours:
+See available agents and their runs and minutes worked in the last 5 hours.
 ```bash
 agent-comms agents
 ```
@@ -226,6 +226,8 @@ Run initial setup:
 ```bash
 agent-comms setup
 ```
+
+After `git pull`, the next turn automatically reinstalls the instructions, hooks, and Codex settings when they change. Setup only needs to run once.
 
 ---
 

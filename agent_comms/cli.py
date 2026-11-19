@@ -991,6 +991,11 @@ def handle_quota_watch(args):
 
 def handle_autosave(args):
     from agent_comms.fleet.autosave import autosave
+    from agent_comms.fleet.install import refresh_if_outdated
+    try:
+        refresh_if_outdated()
+    except Exception as e:
+        logger.debug("Refresh after update failed: %s", e)
     try:
         if args.payload:
             raw = Path(args.payload).read_text(encoding="utf-8")
@@ -1088,7 +1093,7 @@ def handle_agents(args):
         rest = f"  resting until {r['resting_until']}" if r["resting_until"] else ""
         if r.get("why"):
             rest += f" ({r['why']})"
-        print(f"{r['agent']:<20} {r['runs_last_5h']} runs in the last 5 hours{rest}")
+        print(f"{r['agent']:<20} {r['runs_last_5h']} runs, {r.get('minutes_last_5h', 0)} min worked in the last 5 hours{rest}")
 
 
 def handle_instructions(args):
