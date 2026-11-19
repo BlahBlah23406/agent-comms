@@ -40,7 +40,9 @@ agent-comms config set auto_sync_storage true
 
 ## Switching Agents (Autosave)
 
-After setup, a hook saves a capsule of your chat every 2 turns and right away when a usage limit message shows up. Codex asks you once to trust the new hook; say yes.
+After setup, a hook saves a capsule of your chat every 2 turns and right away when a usage limit message shows up. Long turns are saved too: a tiny hook runs after each tool call and saves every 10 minutes in the background.
+
+Codex asks you to trust new hooks once; open `codex` and approve the agent-comms hooks or they won't run.
 
 To pick up where you left off in any agent, just say `continue` (which calls the `resume_latest` MCP tool) or run:
 ```bash
@@ -61,17 +63,18 @@ agent-comms config set autosave_every 3
 
 ## Sharing Work Across Agents
 
-When a big task splits into independent parts, `agent-comms` can hand those parts out to other agent CLIs in the background. It picks the least-used CLI in the last 5 hours. If an agent hits a usage limit, `agent-comms` rests it for an hour and moves the task to another agent.
+When a big task splits into independent parts, `agent-comms` can hand those parts out to other agent CLIs in the background. When possible, each task goes to a different provider, and the agent asking for help uses its own provider last so one subscription doesn't pay for everything. It picks the least-used CLI in the last 5 hours. A usage-limit message like "session limit" rests that agent for an hour and moves the task to another agent.
 
 Check which agent CLIs are installed and how many times each ran in the last 5 hours:
 ```bash
 agent-comms agents
 ```
 
-Hand tasks to other agents in the background (or add `--wait` to wait for results, or `--agent <slot>` to force a specific one):
+Hand tasks to other agents in the background (or add `--wait` to wait for results):
 ```bash
 agent-comms run "task one" "task two"
 ```
+Use `--agent <slot>` to pick who goes first; it still moves on to another agent if that one fails.
 
 Check background jobs or read the output of one job:
 ```bash
@@ -81,11 +84,11 @@ agent-comms jobs <id>
 
 Inside an agent chat, the agent can use the MCP tools `save_progress`, `run_on_agents`, `check_jobs`, `agent_status`, and `resume_latest` to do the same work.
 
-**Permissions:** By default, helper agents may edit files in the project folder, but nothing riskier. If you want helpers to run any command without prompts, set:
+**Permissions:** By default, helpers run in each CLI's auto mode: `claude --permission-mode auto`, `agy --mode auto`, or Codex's `workspace-write` sandbox. They can run builds and tests while risky actions are still checked. Set `fleet_permissions` to `full` to skip all checks for all helpers:
 ```bash
 agent-comms config set fleet_permissions full
 ```
-Warning: only enable `full` in projects you trust.
+Or use `fleet_full_agents` to skip all checks for only the providers you list. Only enable these settings in projects you trust.
 
 **Ollama:** By default, the helper list is `claude`, `codex`, `agy`. Local or cloud Ollama models are only used when you add `ollama` to the agent list:
 ```bash
@@ -98,6 +101,10 @@ agent-comms config set ollama_model <model>
 agent-comms fleet add-host my-server --ssh me@192.168.1.20 --dir ~/myproject --agents claude,codex
 ```
 Add `--powershell` if the remote machine runs Windows. The folder on that machine (`--dir`) must already have the project. Remove a host with `agent-comms fleet remove-host <name>`.
+
+Helpers on other machines start from your project's current state in a throwaway copy. Their file changes come back and are applied to your project automatically. If a patch cannot be applied, it is saved for you to check.
+
+Each machine's CLIs must be logged in for SSH use too; on macOS the keychain is locked over SSH, so use `claude setup-token` and set `CLAUDE_CODE_OAUTH_TOKEN`.
 
 **Busy machines say no:** before a machine takes a helper job, it checks itself. If it is too busy, the job goes to another agent and that machine is skipped for 10 minutes. See how a machine is doing with:
 ```bash

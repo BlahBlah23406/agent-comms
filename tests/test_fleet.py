@@ -1,16 +1,19 @@
 import base64
+import io
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from agent_comms.capsule.store import CapsuleStore
 from agent_comms.config import config_manager
-from agent_comms.fleet import capacity, runner
+from agent_comms.fleet import capacity, remote, runner, tick
 from agent_comms.fleet.autosave import autosave, read_transcript
 
 
@@ -106,7 +109,9 @@ class TestFleet(unittest.TestCase):
         cwd = self.temp_dir / "workspace"
         cwd.mkdir()
 
-        with patch.object(config_manager, "config_dir", cfg_dir):
+        with patch.object(config_manager, "config_dir", cfg_dir), patch.object(
+            config_manager, "get", return_value=None
+        ), patch.object(Path, "home", return_value=self.temp_dir):
             payload = {"cwd": str(cwd), "session_id": "sess-1", "prompt": "Step 1"}
 
             c1 = autosave(payload, agent="claude", every=2, store=store)
@@ -147,6 +152,118 @@ class TestFleet(unittest.TestCase):
                 },
             })
             self.assertEqual(runner.pick(), "codex")
+
+    def test_runner_pick_avoids_caller_despite_fewer_runs(self):
+        now = time.time()
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "available_slots", return_value=["claude", "codex", "agy"]
+        ), patch.object(runner.capacity, "check", return_value={"busy": False}):
+            runner.save_usage({
+                "runs": {"claude": [], "codex": [now], "agy": [now, now]},
+                "cooldown": {},
+            })
+            self.assertEqual(runner.pick(), "claude")
+            self.assertEqual(runner.pick(avoid={"claude"}), "codex")
+
+    def test_runner_submit_spreads_prompts_across_providers(self):
+        prompts = ["First task", "Second task", "Third task"]
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            runner, "available_slots", return_value=["claude", "codex", "agy"]
+        ), patch.object(runner.capacity, "check", return_value={"busy": False}), patch.object(
+            runner.subprocess, "Popen"
+        ) as popen:
+            jobs = runner.submit(prompts, cwd=str(self.temp_dir), caller="claude")
+
+            self.assertEqual(len(jobs), 3)
+            self.assertEqual({job["agent"] for job in jobs}, {"claude", "codex", "agy"})
+            self.assertNotEqual(jobs[0]["agent"], "claude")
+            self.assertEqual([job["prompt"] for job in jobs], prompts)
+            self.assertTrue(all(job["caller"] == "claude" for job in jobs))
+            self.assertEqual(popen.call_count, 3)
+            for job, call in zip(jobs, popen.call_args_list):
+                self.assertEqual(runner.read_job(job["id"]), job)
+                self.assertEqual(call.args[0][-1], job["id"])
+
+    def test_runner_detect_caller_from_client_name(self):
+        with patch.dict(os.environ, {}, clear=True):
+            for client, expected in (
+                ("claude-code", "claude"),
+                ("codex-mcp-client", "codex"),
+                ("Antigravity", "agy"),
+            ):
+                with self.subTest(client=client):
+                    self.assertEqual(runner.detect_caller(client), expected)
+
+    def test_autosave_force_saves_on_first_turn_without_incrementing(self):
+        payload = {"cwd": str(self.temp_dir), "session_id": "force-session"}
+        store = MagicMock()
+        store.base_dir = self.temp_dir / "capsules"
+        capsule = MagicMock(task_id="auto-test")
+        capsule.extra_metadata = {}
+        with patch.object(config_manager, "config_dir", self.temp_dir), patch.object(
+            Path, "home", return_value=self.temp_dir
+        ), patch("agent_comms.fleet.autosave.CapsulePackager") as packager:
+            packager.return_value.package.return_value = capsule
+            self.assertIsNone(autosave(payload, agent="claude", every=2, store=store))
+            turns_file = self.temp_dir / "turns.json"
+            counter_before = turns_file.read_bytes()
+            self.assertEqual(json.loads(counter_before), {"force-session": 1})
+
+            saved = autosave(payload, agent="claude", every=2, store=store, force=True)
+
+            self.assertIs(saved, capsule)
+            packager.return_value.package.assert_called_once()
+            store.save.assert_called_once_with(capsule)
+            self.assertTrue(capsule.extra_metadata["autosave"])
+            self.assertEqual(turns_file.read_bytes(), counter_before)
+
+    def test_tick_starts_save_once_per_ten_minutes_for_same_session(self):
+        raw = json.dumps({"session_id": "tick-session", "cwd": str(self.temp_dir)})
+        with patch.object(Path, "home", return_value=self.temp_dir), patch.object(
+            sys, "argv", ["tick", "codex"]
+        ), patch.object(sys, "stdout", new_callable=io.StringIO), patch.object(
+            tick.time, "time", side_effect=[10000, 10599, 10600]
+        ), patch.object(tick.subprocess, "Popen") as popen:
+            for expected_calls in (1, 1, 2):
+                with patch.object(sys, "stdin", io.StringIO(raw)):
+                    tick.main()
+                self.assertEqual(popen.call_count, expected_calls)
+
+            command = popen.call_args.args[0]
+            self.assertEqual(command[:-1], [
+                sys.executable, "-m", "agent_comms.cli", "autosave",
+                "--agent", "codex", "--force", "--payload",
+            ])
+            self.assertEqual(Path(command[-1]).read_text(encoding="utf-8"), raw)
+            state = json.loads((self.temp_dir / ".agent-comms" / "saves.json").read_text())
+            self.assertEqual(state, {"tick-session": 10600})
+
+    def test_runner_take_patch_applies_remote_changes(self):
+        workspace = self.temp_dir / "workspace"
+        workspace.mkdir()
+        subprocess.run(["git", "init", "-q", str(workspace)], check=True, capture_output=True)
+        target = workspace / "example.txt"
+        target.write_text("before\n", encoding="utf-8")
+        subprocess.run(["git", "add", "example.txt"], cwd=workspace, check=True, capture_output=True)
+        target.write_text("after\n", encoding="utf-8")
+        diff = subprocess.run(
+            ["git", "diff", "--", "example.txt"], cwd=workspace,
+            check=True, capture_output=True, text=True,
+        ).stdout
+        self.assertTrue(diff)
+        target.write_text("before\n", encoding="utf-8")
+        output = f"Helper summary\n{remote.PATCH_START}\n{diff}{remote.PATCH_END}\nDone"
+
+        with patch.object(config_manager, "config_dir", self.temp_dir):
+            result = runner._take_patch({"id": "patch-job", "cwd": str(workspace)}, output)
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "after\n")
+        self.assertEqual((self.temp_dir / "jobs" / "patch-job.patch").read_text(), diff)
+        self.assertIn("Helper summary", result)
+        self.assertIn("Done", result)
+        self.assertIn("file changes from the helper were applied", result)
+        self.assertNotIn(remote.PATCH_START, result)
+        self.assertNotIn(remote.PATCH_END, result)
 
     def test_build_command_powershell_and_normal_host(self):
         hosts = [
